@@ -9,6 +9,7 @@ import com.dlsc.animatorfx.editor.ui.Palette;
 import com.dlsc.animatorfx.editor.ui.Palette.Tone;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Keyframe;
 import com.dlsc.animatorfx.model.Layer;
@@ -239,6 +240,10 @@ public final class TrackPane extends Region {
             drawAudioBar(g, palette, scale, row, audio, y, duration);
             return;
         }
+        if (layer instanceof VideoLayer video) {
+            drawVideoBar(g, palette, scale, video, y, duration);
+            return;
+        }
         boolean slot = layer instanceof SlotLayer;
         double x1 = Math.round(scale.toX(barStart(layer, duration)));
         double x2 = Math.max(x1 + 2, Math.round(scale.toX(barEnd(layer, duration))));
@@ -259,6 +264,43 @@ public final class TrackPane extends Region {
                 g.fill();
             }
         }
+        g.setGlobalAlpha(1);
+    }
+
+    private void drawVideoBar(GraphicsContext g, Palette palette, TimeScale scale, VideoLayer layer,
+                              double y, double duration) {
+        double x1 = Math.round(scale.toX(barStart(layer, duration)));
+        double x2 = Math.max(x1 + 2, Math.round(scale.toX(barEnd(layer, duration))));
+        double top = y + AUDIO_BAR_INSET;
+        double height = TimelineView.ROW_HEIGHT - 2 * AUDIO_BAR_INSET - 1;
+        g.setGlobalAlpha(layer.base().visible() ? 1 : 0.4);
+        g.setFill(palette.get(Tone.KEY_BAR));
+        g.fillRoundRect(x1, top, x2 - x1, height, 3, 3);
+        g.setStroke(palette.get(Tone.KEY));
+        g.strokeRoundRect(x1 + 0.5, top + 0.5, x2 - x1 - 1, height - 1, 3, 3);
+        g.save();
+        g.beginPath();
+        g.rect(x1 + 1, top + 1, Math.max(0, x2 - x1 - 2), height - 2);
+        g.clip();
+        double clip = timeline.clipDurationOf(layer.assetId());
+        AudioClips.Layout layout = AudioClips.layout(layer.base().inPoint(), layer.base().outPoint(),
+                layer.clipOffset(), clip, layer.loop());
+        double end = Math.clamp(scale.toX(layout.soundEnd()), x1, x2);
+        if (end < x2) {
+            g.setFill(palette.get(Tone.PANEL, 0.7));
+            g.fillRect(end, top, x2 - end, height);
+        }
+        g.setFill(palette.get(Tone.KEY, 0.55));
+        for (double x = Math.max(0, x1) + 4; x < Math.min(getWidth(), x2) - 2; x += 12) {
+            g.fillRect(x, top + 2, 3, 2);
+            g.fillRect(x, top + height - 4, 3, 2);
+        }
+        g.setStroke(palette.get(Tone.KEY));
+        for (double boundary : layout.loopBoundaries()) {
+            double x = scale.toX(boundary);
+            if (x >= 0 && x <= getWidth()) g.strokeLine(x, top, x, top + height);
+        }
+        g.restore();
         g.setGlobalAlpha(1);
     }
 

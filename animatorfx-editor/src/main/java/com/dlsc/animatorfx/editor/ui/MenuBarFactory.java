@@ -81,7 +81,8 @@ final class MenuBarFactory {
                         () -> imports().chooseAndImport(ImportActions.Kind.LOTTIE)),
                 item("menu-file-import-fxml", "FXML…", null, () -> imports().chooseAndImport(ImportActions.Kind.FXML)),
                 item("menu-file-import-image", "Image…", null, () -> window.getCanvasView().getActions().chooseImage()),
-                item("menu-file-import-audio", "Audio…", null, () -> imports().chooseAndImportAudio()));
+                item("menu-file-import-audio", "Audio…", null, () -> imports().chooseAndImportAudio()),
+                item("menu-file-import-video", "Video…", null, () -> imports().chooseAndImportVideo()));
 
         Menu exports = new Menu("Export");
         exports.setId("menu-file-export");
@@ -343,7 +344,7 @@ final class MenuBarFactory {
         Menu menu = new Menu("View");
         menu.setId("menu-view");
         menu.getItems().addAll(
-                item("menu-view-zoom-in", "Zoom In", shortcut(KeyCode.EQUALS), canvas::zoomIn),
+                item("menu-view-zoom-in", "Zoom In", shortcut(KeyCode.PLUS), canvas::zoomIn),
                 item("menu-view-zoom-out", "Zoom Out", shortcut(KeyCode.MINUS), canvas::zoomOut),
                 item("menu-view-zoom-fit", "Zoom to Fit", shortcut(KeyCode.DIGIT0), canvas::zoomToFit),
                 item("menu-view-actual-size", "Actual Size", shortcut(KeyCode.DIGIT1), canvas::zoomToActualSize),

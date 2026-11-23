@@ -7,7 +7,7 @@ import java.util.Objects;
  */
 public record Asset(String id, Kind kind, String path, String name) {
 
-    public enum Kind {IMAGE, FONT, AUDIO}
+    public enum Kind {IMAGE, FONT, AUDIO, VIDEO}
 
     public Asset {
         Objects.requireNonNull(id, "id");

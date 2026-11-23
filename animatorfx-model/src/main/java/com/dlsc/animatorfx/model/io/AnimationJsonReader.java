@@ -26,6 +26,7 @@ import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Trim;
 import com.dlsc.animatorfx.model.Vec2;
+import com.dlsc.animatorfx.model.VideoLayer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -161,6 +162,7 @@ final class AnimationJsonReader {
             case "group" -> new GroupLayer(base, layers(node.elements("children"), depth + 1));
             case "slot" -> slot(node, base);
             case "audio" -> audio(node, base);
+            case "video" -> video(node, base);
             default -> throw type.error("Unknown layer type: " + type.string());
         };
     }
@@ -221,6 +223,24 @@ final class AnimationJsonReader {
                 node.get("muted").bool(false));
     }
 
+    private VideoLayer video(Node node, LayerBase base) throws AnimationFormatException {
+        Node clipOffset = node.get("clipOffset");
+        Node volume = node.get("volume");
+        return new VideoLayer(base, assetId(node.required("asset"), Asset.Kind.VIDEO),
+                positive(node.required("width")), positive(node.required("height")),
+                clipOffset.isMissing() ? 0 : notNegative(clipOffset),
+                volume.isMissing() ? Defaults.VOLUME : animatable(volume, v -> within(v, 0, 1)),
+                node.get("loop").bool(false), node.get("muted").bool(false));
+    }
+
+    private static double positive(Node node) throws AnimationFormatException {
+        double value = node.number();
+        if (value <= 0) {
+            throw node.error("Must be positive but is " + value);
+        }
+        return value;
+    }
+
     private static double notNegative(Node node) throws AnimationFormatException {
         double value = node.number();
         if (value < 0) {
@@ -247,6 +267,7 @@ final class AnimationJsonReader {
                 case IMAGE -> "an image";
                 case FONT -> "a font";
                 case AUDIO -> "an audio file";
+                case VIDEO -> "a video file";
             });
         }
         return node.string();

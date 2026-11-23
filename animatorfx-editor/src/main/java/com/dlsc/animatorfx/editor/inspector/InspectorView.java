@@ -3,6 +3,8 @@ package com.dlsc.animatorfx.editor.inspector;
 import com.dlsc.animatorfx.editor.audio.SoundPreview;
 import com.dlsc.animatorfx.editor.audio.WaveformCache;
 import com.dlsc.animatorfx.editor.inspector.sections.AudioSection;
+import com.dlsc.animatorfx.editor.inspector.sections.VideoSection;
+import com.dlsc.animatorfx.editor.video.VideoImport;
 import com.dlsc.animatorfx.editor.inspector.sections.CueSection;
 import javafx.beans.WeakInvalidationListener;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
@@ -86,10 +88,11 @@ public final class InspectorView extends StackPane {
         });
         sections.addAll(new EasingSection(), new LayerSection(), new TransformSection(), new GeometrySection(),
                 new FillSection(), new StrokeSection(), new TrimSection(), new TextSection(), new ImageSection(),
-                new AudioSection(), new CueSection(), new SlotSection(), new EffectsSection(), new MaskSection(), new MotionPathSection());
+                new VideoSection(), new AudioSection(), new CueSection(), new SlotSection(), new EffectsSection(), new MaskSection(), new MotionPathSection());
 
         // the length of a sound may become known after the section shows
         WaveformCache.shared().revisionProperty().addListener(new WeakInvalidationListener(infoArrived));
+        VideoImport.revisionProperty().addListener(new WeakInvalidationListener(infoArrived));
         document.addListener((obs, oldDoc, newDoc) -> {
             if (oldDoc != null) {
                 oldDoc.animationProperty().removeListener(refresh);

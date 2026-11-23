@@ -13,6 +13,7 @@ animations it creates inside JavaFX applications.
   placeholders that the application fills with its own nodes, which the animation then drives.
 - An animation can carry **sound**: audio layers that play in sync with it and cues that fire
   at a point in time.
+- Embedded **video layers** play MP4/M4V picture and sound together on the animation timeline.
 
 **User manual:** [Read online](docs/USER_MANUAL.md) · [Download the PDF](docs/AnimatorFX-User-Manual.pdf)
 
@@ -59,6 +60,8 @@ animations it creates inside JavaFX applications.
 - Sound: audio layers (MP3, WAV, AIFF, M4A/AAC) with animatable volume and balance, clip offset
   and loop, and sound cues; `muted` and `volume` on the view and the player. The sound follows
   the animation clock and the playback rate.
+- Video layers: embedded MP4/M4V, transforms, masks, effects, source offset, looping and
+  animatable soundtrack volume; one JavaFX media player supplies both picture and sound.
 - Scene-graph rendering, so content stays crisp at any size. One `AnimationTimer` per player,
   running only while playing.
 - Java 21, JavaFX 21 (including `javafx.media`), JPMS modules, no third-party dependencies.
@@ -69,6 +72,7 @@ animations it creates inside JavaFX applications.
 - Timeline with a layer tree, keyframes, markers, in/out bars and a scrubbing playhead.
 - Sound: import of audio files, audio rows with waveforms, a cue lane, audible playback and
   scrubbing, a mute switch.
+- Video import, reusable assets, rectangular canvas editing, inspector controls and clip bars.
 - Inspector with a keyframe toggle on every animatable property and a cubic-bezier easing editor.
 - Auto-key, undo/redo, copy/paste of layers and keyframes, groups.
 - Import of SVG, Lottie JSON (with embedded sounds) and FXML.
@@ -375,6 +379,26 @@ The rules:
   0.1 s of the audio layers at that time (no cues). It is meant for tools such as the editor's
   timeline.
 
+### Video
+
+Video layers need no extra setup in an `AnimationView`. The animation clock controls both the
+picture and its soundtrack through one decoder per layer instance. Layer and master mute or
+volume affect sound, not picture; hidden or inactive layers and groups suppress both.
+At time `t`, the source position is `clipOffset + t - inPoint`. Without looping, source end
+hides the picture and silences sound; looping wraps to the source beginning.
+
+MP4/M4V with H.264 video and AAC audio is the primary target. Actual codec support depends on
+the platform's JavaFX media stack. Seeking is asynchronous and best-effort, not frame-accurate.
+Paused scrubbing, reverse playback, rate zero and rates above 8 use silent seeking; ordinary
+forward playback uses the native media clock with drift correction. Video does not join the
+audible scrub snippets of audio-only layers.
+
+Embedded bytes are extracted lazily off the FX thread into private temporary files. Visual
+edits reuse the decoder; replacing/removing sources or layers, detaching the view, replacing
+its skin, or calling `dispose()` releases obsolete players and files. Reattaching recreates
+them as needed. A standalone `Renderer` supports silent seek-only video and must be disposed
+when discarded. An unsupported clip is reported once and does not stop neighboring layers.
+
 ## The editor
 
 ### Layout
@@ -575,20 +599,38 @@ It holds `session.json` and `recovery/`. The system property `animatorfx.configD
 location, for example `-Danimatorfx.configDir=/path/to/dir` with `mvn javafx:run`, or
 `JAVA_TOOL_OPTIONS=-Danimatorfx.configDir=/path/to/dir` for the packaged application.
 
+### Video layers
+
+Choose **File > Import > Video...**, or drop an MP4/M4V file onto the window. Clips up to
+**50 MiB** are embedded unchanged and placed at the playhead with their natural dimensions,
+as one undoable import. Probing is asynchronous, never autoplays, and refuses audio-only or
+unsupported files without adding partial content.
+
+**Assets > Add...** stores a clip for reuse; its camera button places another video layer
+without duplicating the embedded bytes. In-use assets cannot be removed. The **Video** inspector
+edits source, width, height, offset, loop, mute and animated volume; ordinary visual sections
+provide transforms, opacity, masks and effects.
+
+Video rows have film-style clip bars, a visibility eye and a separate soundtrack-mute button.
+Drag the bar to move its range. Left-edge trimming advances the source offset to keep the
+remaining picture aligned; Alt-left-edge dragging changes only the in-point. Drag the right
+edge to trim the end, or Alt-drag the body to slip the source under the unchanged range.
+Clip gestures snap to document frames. No thumbnail strip or video-sound waveform is generated.
+
 ## The `.afx` format
 
 An `.afx` file is a zip archive:
 
 ```
 animation.json     the document
-assets/<id>.<ext>  images (PNG, JPEG), fonts (TTF, OTF) and sounds (MP3, WAV, AIFF, M4A, AAC)
+assets/<id>.<ext>  images, fonts, sounds and original MP4/M4V videos
 ```
 
 - `animation.json` is UTF-8, pretty-printed with a stable key order, so unzipped files diff
   cleanly. Equal documents give byte-identical archives.
-- `formatVersion` is `2`. Version 2 added sound: assets of kind `audio`, layers of type `audio`
-  and the document member `cues`. Version-1 files are read unchanged; the reader rejects versions
-  newer than its own, so a version-1 reader does not open version-2 files.
+- `formatVersion` is `3`, adding assets of kind `video` and layers of type `video`.
+  Version 2 added audio assets/layers and `cues`. Versions 1 and 2 still load; older readers
+  reject version 3 through the unsupported-version error.
 - The reader also accepts a bare `animation.json` when the document has no assets. The editor
   always writes zips: *Save* on a document that was opened from a file that is no `.afx` asks
   for an `.afx` file instead of replacing the source. *Save As* adds `.afx` to a name that does
@@ -598,8 +640,11 @@ assets/<id>.<ext>  images (PNG, JPEG), fonts (TTF, OTF) and sounds (MP3, WAV, AI
   documents, and the editor refuses to group, paste, drop or import beyond the limit.
 - Time is in seconds, coordinates in document pixels (origin top-left, y down), angles in degrees
   clockwise, colours `#RRGGBB` or `#RRGGBBAA`, opacity and trim `0..1`, scale `1` = 100 %.
-- Layers have a `type`: `shape`, `text`, `image`, `group`, `slot`, `audio`. They are listed bottom
+- Layers have a `type`: `shape`, `text`, `image`, `group`, `slot`, `audio`, `video`. They are listed bottom
   to top.
+- Video members are `asset`, positive `width`/`height`, nonnegative `clipOffset` (default 0),
+  animatable `volume` (0..1, default 1), `loop` and `muted` (default false). Decoder state and
+  metadata are not saved. Source bytes survive archive round-trips unchanged.
 - An animatable value is written plainly when static and as `{"keyframes": [...]}` when animated.
   A keyframe has a time `t`, a value `v` and an easing `e` that leads to the next keyframe:
   `"linear"` (default), `"hold"` or `[x1, y1, x2, y2]`.
@@ -610,7 +655,7 @@ A complete document, a dot that swells and shrinks:
 
 ```json
 {
-  "formatVersion": 2,
+  "formatVersion": 3,
   "name": "pulse",
   "width": 120,
   "height": 120,
@@ -651,7 +696,7 @@ asset's `path`, so this document needs the zip form.
 
 ```json
 {
-  "formatVersion": 2,
+  "formatVersion": 3,
   "name": "jingle",
   "width": 120,
   "height": 120,
@@ -766,6 +811,8 @@ How a document is laid out in Lottie:
 - **Text colours** have no alpha in Lottie; the alpha of the fill becomes the opacity of the layer.
 - **Images and sounds** are embedded as data URIs. Audio layers and sound cues become Lottie audio
   layers.
+- **Video layers and their sound** are omitted, with a warning naming each layer. Video assets
+  are not embedded, converted to poster frames or copied into dotLottie archives.
 - **The background colour** goes into the manifest of the dotLottie archive; plain Lottie JSON has
   no place for it.
 
@@ -782,7 +829,6 @@ and renders the exported files with the Lottie4J player as well.
 Out of scope by design:
 
 - Expressions or scripting inside animations.
-- Video layers.
 - Recording, editing or processing sound (effects, per-channel mixing beyond balance).
 - State machines and input-driven animations.
 - Export to GIF or video.
@@ -819,6 +865,9 @@ Gaps in what is there:
   more than 80 ms.
 - **Playing backwards is silent** (negative rate, the returning leg of auto-reverse), and so are
   rate 0 and rates above 8.
+- **Video seeking is asynchronous**, including scrubbing and reverse playback; it is not
+  frame-accurate. Video codecs depend on JavaFX/platform support. There is no transcoding,
+  video encoding, linked-media support or video waveform/thumbnail analysis.
 - **Waveforms of MP3 and M4A/AAC** are approximate and are computed by playing the file silently,
   which on macOS takes as long as the sound; the length JavaFX reports for AAC includes encoder
   padding, so such a layer can be a little longer than its sound. WAV and AIFF waveforms are exact.

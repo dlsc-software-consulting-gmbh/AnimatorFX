@@ -229,6 +229,10 @@ class MainWindowTest {
             assertNotNull(header.lookup(".brand"));
             assertNotNull(header.lookup(".document-tabs"));
             assertNotNull(header.lookup("#theme-toggle"));
+            for (String id : List.of("zoom-out", "zoom", "zoom-in", "zoom-actual-size", "zoom-fit")) {
+                assertNotNull(header.lookup("#" + id), id);
+                assertNull(window.getToolBar().lookup("#" + id), id);
+            }
             assertNull(window.getToolBar().lookup(".document-tabs"));
             assertNull(window.getToolBar().lookup("#theme-toggle"));
             assertTrue(window.getToolBar().localToScene(0, 0).getY() >= bounds.getMaxY());
@@ -237,6 +241,26 @@ class MainWindowTest {
             assertEquals(2, window.getWorkspace().getDocuments().size());
             assertEquals(2, header.lookupAll(".document-tab").size());
             assertNotNull(window.getToolBar().lookup("#transport-play"));
+        });
+    }
+
+    @Test
+    void headerZoomFollowsTheActiveDocument() {
+        MainWindow window = start();
+        run(() -> {
+            EditorDocument first = window.getWorkspace().getActiveDocument();
+            first.getViewState().setCanvasZoom(1.5);
+            EditorDocument second = window.getFileActions().newDocument();
+            second.getViewState().setCanvasZoom(2);
+            assertEquals(Formats.zoom(2), text(window, "#zoom"));
+
+            first.getViewState().setCanvasZoom(0.5);
+            assertEquals(Formats.zoom(2), text(window, "#zoom"));
+            window.getWorkspace().setActiveDocument(first);
+            assertEquals(Formats.zoom(0.5), text(window, "#zoom"));
+            ((Button) window.getScene().lookup("#zoom-in")).fire();
+            assertTrue(first.getViewState().getCanvasZoom() > 0.5);
+            assertEquals(2, second.getViewState().getCanvasZoom());
         });
     }
 
@@ -261,18 +285,28 @@ class MainWindowTest {
                 Bounds center = header.getCenter().localToScene(header.getCenter().getLayoutBounds());
                 Bounds right = header.getRight().localToScene(header.getRight().getLayoutBounds());
                 assertTrue(left.getMaxX() <= center.getMinX(), mode + ": tabs overlap the brand");
-                assertTrue(center.getMaxX() <= right.getMinX(), mode + ": tabs overlap the theme switch");
+                assertTrue(center.getMaxX() <= right.getMinX(), mode + ": tabs overlap header controls");
                 assertTrue(left.getMinX() >= HeaderBar.getLeftSystemInset(window.getStage()).getWidth());
                 assertTrue(right.getMaxX() <= window.getScene().getWidth()
                         - HeaderBar.getRightSystemInset(window.getStage()).getWidth());
 
                 double previousRight = 0;
                 for (String id : List.of("transport-start", "transport-play", "transport-end", "timecode",
-                        "fps", "loop", "mute", "zoom")) {
+                        "fps", "loop", "mute")) {
                     Node control = window.getToolBar().lookup("#" + id);
                     Bounds controlBounds = control.localToScene(control.getLayoutBounds());
                     assertTrue(controlBounds.getMinX() >= previousRight, mode + ": overlapping " + id);
                     assertTrue(controlBounds.getMaxX() <= window.getScene().getWidth(), mode + ": clipped " + id);
+                    previousRight = controlBounds.getMaxX();
+                }
+                previousRight = right.getMinX();
+                for (String id : List.of("zoom-out", "zoom", "zoom-in", "zoom-actual-size", "zoom-fit",
+                        "theme-toggle")) {
+                    Node control = header.lookup("#" + id);
+                    assertNotNull(control, id);
+                    Bounds controlBounds = control.localToScene(control.getLayoutBounds());
+                    assertTrue(controlBounds.getMinX() >= previousRight, mode + ": overlapping " + id);
+                    assertTrue(controlBounds.getMaxX() <= right.getMaxX(), mode + ": clipped " + id);
                     previousRight = controlBounds.getMaxX();
                 }
             }

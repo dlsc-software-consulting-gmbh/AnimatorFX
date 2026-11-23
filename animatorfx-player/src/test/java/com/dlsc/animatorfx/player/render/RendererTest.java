@@ -18,6 +18,7 @@ import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Trim;
 import com.dlsc.animatorfx.model.Vec2;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.io.AnimationFile;
 import com.dlsc.animatorfx.player.Evaluator;
 import com.dlsc.animatorfx.player.FxThreadExtension;
@@ -65,6 +66,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith(FxThreadExtension.class)
 class RendererTest {
+
+    @Test
+    void videoUsedAsAClipMaskHasRectangularGeometryWithoutAMediaPlayer() {
+        VideoLayer video = new VideoLayer(base("video"), "clip", 320, 180, 0,
+                Animatable.of(1.0), false, false);
+        ShapeLayer shape = rect("shape", 100, 100).withBase(base("shape").withMask(new Mask("video", Mask.Mode.CLIP)));
+        show(doc(video, shape), 0.5);
+        Node mask = renderer.getLayerNode("shape").getClip();
+        assertEquals(320, mask.getBoundsInLocal().getWidth(), 0.01);
+        assertEquals(180, mask.getBoundsInLocal().getHeight(), 0.01);
+    }
 
     private static final byte[] PNG = Base64.getDecoder().decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");

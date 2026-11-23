@@ -6,7 +6,6 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
-import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
@@ -18,7 +17,7 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.material2.Material2MZ;
 
 /**
- * The playback bar: transport, timecode, frame rate, loop toggle, mute toggle and canvas zoom.
+ * The playback bar: transport, timecode, frame rate, loop toggle and mute toggle.
  *
  * <p>The to-start and to-end buttons move the playhead of the document. Playback itself is not
  * part of the toolbar: whoever owns the player sets {@link #onPlayPauseProperty()} and keeps
@@ -34,7 +33,6 @@ public final class ToolBarView extends HBox {
 
     private final Label timecode = pill(new Label(), "timecode");
     private final Label frameRate = pill(new Label(), "fps");
-    private final Label zoom = pill(new Label(), "zoom");
 
     public ToolBarView() {
         getStyleClass().add("toolbar");
@@ -82,12 +80,8 @@ public final class ToolBarView extends HBox {
         HBox centre = new HBox(transport, timecode, frameRate, loopButton, muteButton);
         centre.getStyleClass().add("toolbar-group");
 
-        zoom.setTooltip(new Tooltip("Canvas zoom"));
-
         HBox left = new HBox();
-        HBox right = new HBox(zoom);
-        right.getStyleClass().add("toolbar-group");
-        right.setAlignment(Pos.CENTER_RIGHT);
+        HBox right = new HBox();
 
         // equal growth on both sides keeps the transport in the middle of the bar
         for (HBox side : new HBox[]{left, right}) {
@@ -102,7 +96,7 @@ public final class ToolBarView extends HBox {
     }
 
     /**
-     * The document whose playhead, duration, frame rate and zoom the bar shows.
+     * The document whose playhead, duration and frame rate the bar shows.
      *
      * @return the document property
      */
@@ -196,11 +190,9 @@ public final class ToolBarView extends HBox {
     private void bind(EditorDocument doc) {
         timecode.textProperty().unbind();
         frameRate.textProperty().unbind();
-        zoom.textProperty().unbind();
         if (doc == null) {
             timecode.setText(Formats.timecode(0) + " / " + Formats.timecode(0));
             frameRate.setText("");
-            zoom.setText("");
             return;
         }
         timecode.textProperty().bind(Bindings.createStringBinding(() -> {
@@ -210,8 +202,6 @@ public final class ToolBarView extends HBox {
         }, doc.playheadProperty(), doc.animationProperty()));
         frameRate.textProperty().bind(Bindings.createStringBinding(
                 () -> Formats.frameRate(doc.getAnimation().frameRate()), doc.animationProperty()));
-        zoom.textProperty().bind(Bindings.createStringBinding(
-                () -> Formats.zoom(doc.getViewState().getCanvasZoom()), doc.getViewState().canvasZoomProperty()));
     }
 
     private static Label pill(Label label, String id) {

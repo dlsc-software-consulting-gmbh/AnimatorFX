@@ -5,6 +5,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import com.dlsc.animatorfx.editor.audio.AudioImport;
 import com.dlsc.animatorfx.editor.audio.AudioInfo;
+import com.dlsc.animatorfx.editor.video.VideoImport;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Function;
@@ -81,10 +82,12 @@ public final class ImportActions {
     private final Supplier<Window> owner;
     private BiFunction<Window, Kind, Optional<Path>> filePicker = this::chooseFile;
     private Function<Window, List<Path>> audioPicker = this::chooseAudioFiles;
+    private Function<Window, List<Path>> videoPicker = this::chooseVideoFiles;
     private BiConsumer<String, List<String>> warningsViewer;
     private Path lastDirectory;
     /** Completes when the sound imports started so far are applied; they are applied in order. */
     private CompletableFuture<Void> audioImports = CompletableFuture.completedFuture(null);
+    private CompletableFuture<Void> videoImports = CompletableFuture.completedFuture(null);
 
     ImportActions(Workspace workspace, NoticeBar notices, Dialogs dialogs, Supplier<Window> owner) {
         this.workspace = workspace;
@@ -173,10 +176,66 @@ public final class ImportActions {
         return audioImports;
     }
 
+    /** Replaces the video file chooser; an empty list cancels the import. */
+    public void setVideoPicker(Function<Window, List<Path>> picker) {
+        videoPicker = Objects.requireNonNull(picker);
+    }
+
+    public void chooseAndImportVideo() {
+        EditorDocument document = workspace.getActiveDocument();
+        if (document != null) {
+            for (Path file : videoPicker.apply(owner.get())) importVideo(document, file);
+        }
+    }
+
+    /** Reads clips concurrently and applies successful video imports in request order. */
+    public CompletableFuture<Optional<String>> importVideo(EditorDocument document, Path file) {
+        CompletableFuture<VideoImport.Clip> read = VideoImport.read(file,
+                message -> notices.show(message, null, null));
+        CompletableFuture<Optional<String>> done = new CompletableFuture<>();
+        CompletableFuture<Void> before = videoImports;
+        videoImports = done.handle((layer, error) -> null);
+        done.whenComplete((layer, error) -> {
+            if (done.isCancelled()) read.cancel(true);
+        });
+        before.whenComplete((nothing, ignored) -> read.whenComplete((clip, error) -> {
+            Optional<String> layer = Optional.empty();
+            try {
+                if (!done.isCancelled()) {
+                    if (error != null) refused(file, error);
+                    else if (workspace.getDocuments().contains(document)) {
+                        layer = Optional.of(VideoImport.addLayer(document, clip));
+                    }
+                }
+            } catch (RuntimeException e) {
+                refused(file, e);
+            } finally {
+                done.complete(layer);
+            }
+        }));
+        return done;
+    }
+
+    public CompletableFuture<Void> whenVideoImported() {
+        return videoImports;
+    }
+
+    private List<Path> chooseVideoFiles(Window window) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Import Video");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("MP4 video", "*.mp4", "*.m4v"));
+        if (lastDirectory != null && Files.isDirectory(lastDirectory)) chooser.setInitialDirectory(lastDirectory.toFile());
+        List<File> files = chooser.showOpenMultipleDialog(window);
+        if (files == null || files.isEmpty()) return List.of();
+        lastDirectory = files.getFirst().toPath().toAbsolutePath().getParent();
+        return files.stream().map(File::toPath).toList();
+    }
+
     private void refused(Path file, Throwable error) {
         Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
         notices.show("Could not import " + file.getFileName() + ": "
-                + (cause instanceof AudioImport.Refused ? cause.getMessage() : "it cannot be read."));
+                + (cause instanceof AudioImport.Refused || cause instanceof IOException
+                || cause instanceof IllegalArgumentException ? cause.getMessage() : "it cannot be read."));
     }
 
     /**

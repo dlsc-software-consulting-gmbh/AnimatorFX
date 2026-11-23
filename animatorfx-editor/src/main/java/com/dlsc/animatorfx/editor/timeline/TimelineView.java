@@ -1,6 +1,8 @@
 package com.dlsc.animatorfx.editor.timeline;
 
 import com.dlsc.animatorfx.editor.audio.AudioImport;
+import com.dlsc.animatorfx.editor.video.VideoImport;
+import com.dlsc.animatorfx.editor.video.VideoInfo;
 import com.dlsc.animatorfx.editor.audio.AudioInfo;
 import com.dlsc.animatorfx.editor.audio.Waveform;
 import com.dlsc.animatorfx.editor.audio.WaveformCache;
@@ -127,6 +129,7 @@ public final class TimelineView extends Region {
         getChildren().addAll(palette, tracks, cueLane, markerLane, ruler, playheadLayer, column, divider, hScroll, vScroll);
         // a waveform that arrives is drawn; the cache outlives the view
         WaveformCache.shared().revisionProperty().addListener(new WeakInvalidationListener(redraw));
+        VideoImport.revisionProperty().addListener(new WeakInvalidationListener(redraw));
 
         palette.setOnChange(this::requestLayout);
         hScroll.valueProperty().addListener((obs, oldValue, value) -> {
@@ -292,6 +295,9 @@ public final class TimelineView extends Region {
         EditorDocument doc = getDocument();
         if (doc != null) {
             for (Asset asset : doc.getAnimation().assets()) {
+                if (asset.id().equals(assetId) && asset.kind() == Asset.Kind.VIDEO) {
+                    return VideoImport.info(doc, asset).map(VideoInfo::duration).orElse(Double.NaN);
+                }
                 if (asset.id().equals(assetId) && asset.kind() == Asset.Kind.AUDIO) {
                     double known = AudioImport.info(doc, asset).map(AudioInfo::duration).orElse(Double.NaN);
                     return known > 0 ? known : AudioImport.waveform(doc, asset).map(Waveform::duration).orElse(Double.NaN);

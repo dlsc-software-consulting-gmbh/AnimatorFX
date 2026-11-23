@@ -1,5 +1,7 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.canvas.CanvasView;
+import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -11,17 +13,23 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HeaderBar;
 import javafx.scene.layout.HeaderDragType;
+import javafx.scene.layout.HBox;
 import org.kordamp.ikonli.Ikon;
 import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.material2.Material2AL;
 import org.kordamp.ikonli.material2.Material2MZ;
 
 /**
- * The window header: application identity, document tabs and the theme switch, alongside the
+ * The window header: application identity, document tabs, canvas zoom and the theme switch, alongside the
  * system-provided window buttons.
  */
 public final class HeaderBarView extends HeaderBar {
 
     public HeaderBarView(DocumentTabs tabs, Theme theme, Image icon) {
+        this(tabs, theme, icon, null);
+    }
+
+    public HeaderBarView(DocumentTabs tabs, Theme theme, Image icon, CanvasView canvas) {
         getStyleClass().add("header-bar");
 
         ImageView image = new ImageView(icon);
@@ -59,6 +67,47 @@ public final class HeaderBarView extends HeaderBar {
         themeToggle.setFocusTraversable(false);
         themeToggle.setTooltip(new Tooltip("Switch between dark and light"));
         themeToggle.setOnAction(e -> theme.toggle());
-        setRight(themeToggle);
+        if (canvas == null) {
+            setRight(themeToggle);
+        } else {
+            Label zoom = new Label();
+            zoom.setId("zoom");
+            zoom.getStyleClass().addAll("pill", "mono");
+            zoom.setMinWidth(USE_PREF_SIZE);
+            zoom.setTooltip(new Tooltip("Canvas zoom"));
+            canvas.documentProperty().addListener((obs, oldDoc, newDoc) -> bindZoom(zoom, newDoc));
+            bindZoom(zoom, canvas.getDocument());
+
+            Button zoomOut = zoomButton("zoom-out", Material2MZ.ZOOM_OUT, "Zoom out", canvas, canvas::zoomOut);
+            Button zoomIn = zoomButton("zoom-in", Material2MZ.ZOOM_IN, "Zoom in", canvas, canvas::zoomIn);
+            Button actualSize = zoomButton("zoom-actual-size", Material2AL.LOOKS_ONE, "Actual size",
+                    canvas, canvas::zoomToActualSize);
+            Button zoomFit = zoomButton("zoom-fit", Material2MZ.ZOOM_OUT_MAP, "Zoom to fit",
+                    canvas, canvas::zoomToFit);
+            HBox right = new HBox(zoomOut, zoom, zoomIn, actualSize, zoomFit, themeToggle);
+            right.getStyleClass().add("toolbar-group");
+            setRight(right);
+        }
+    }
+
+    private static void bindZoom(Label zoom, EditorDocument doc) {
+        zoom.textProperty().unbind();
+        if (doc == null) {
+            zoom.setText("");
+        } else {
+            zoom.textProperty().bind(Bindings.createStringBinding(
+                    () -> Formats.zoom(doc.getViewState().getCanvasZoom()), doc.getViewState().canvasZoomProperty()));
+        }
+    }
+
+    private static Button zoomButton(String id, Ikon icon, String tooltip, CanvasView canvas, Runnable action) {
+        Button button = new Button(null, new FontIcon(icon));
+        button.setId(id);
+        button.getStyleClass().add("icon-button");
+        button.setFocusTraversable(false);
+        button.setTooltip(new Tooltip(tooltip));
+        button.disableProperty().bind(canvas.documentProperty().isNull());
+        button.setOnAction(e -> action.run());
+        return button;
     }
 }

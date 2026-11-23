@@ -12,6 +12,9 @@ import com.dlsc.animatorfx.player.internal.audio.AudioEngine;
 import com.dlsc.animatorfx.player.internal.audio.AudioOutput;
 import com.dlsc.animatorfx.player.internal.audio.AudioSchedule;
 import com.dlsc.animatorfx.player.internal.audio.MediaAudioOutput;
+import com.dlsc.animatorfx.player.internal.video.MediaVideoOutput;
+import com.dlsc.animatorfx.player.internal.video.VideoEngine;
+import com.dlsc.animatorfx.player.internal.video.VideoOutput;
 import javafx.animation.AnimationTimer;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
@@ -148,6 +151,7 @@ public class AnimationPlayer {
     private boolean hasSound;
     /** Set by {@link #dispose()}: no sound until playback is started again or the animation is replaced. */
     private boolean audioReleased;
+    private final VideoEngine video;
 
     /**
      * Creates a player without an animation.
@@ -171,6 +175,9 @@ public class AnimationPlayer {
     AnimationPlayer(Clock clock, System.Logger logger) {
         this.clock = clock;
         this.logger = logger;
+        video = new VideoEngine(() -> new MediaVideoOutput(logger, (id, error) -> {}, false), logger);
+        rate.addListener(observable -> syncVideo());
+        volume.addListener(observable -> syncVideo());
     }
 
     /** A player whose sound goes to the given output, whatever the animation. */
@@ -304,6 +311,7 @@ public class AnimationPlayer {
             if (get() && audio != null) {
                 audio.stopCues();
             }
+            syncVideo();
         }
     };
 
@@ -442,6 +450,7 @@ public class AnimationPlayer {
      */
     public void play() {
         audioReleased = false;
+        resumeVideo();
         Status current = getStatus();
         if (getAnimation() == null || current == Status.PLAYING) {
             return;
@@ -534,7 +543,7 @@ public class AnimationPlayer {
      * one by itself. Call this when a player that played sound is no longer needed.
      */
     public void dispose() {
-        releaseAudio();
+        releaseMedia();
         audioReleased = true;
     }
 
@@ -544,6 +553,26 @@ public class AnimationPlayer {
             audio.dispose();
             audio = null;
         }
+    }
+
+    void releaseMedia() {
+        releaseAudio();
+        video.release();
+    }
+
+    VideoEngine video() {
+        return video;
+    }
+
+    void resumeVideo() {
+        if (!suspended || hasInPlaceBindings()) video.resume();
+    }
+
+    /** For tooling: replaces video decoding; null restores JavaFX media. */
+    public void setVideoOutputFactory(java.util.function.Supplier<VideoOutput> factory) {
+        video.setOutputFactory(factory != null ? factory
+                : () -> new MediaVideoOutput(logger, (id, error) -> {}, false));
+        if (suspended && !hasInPlaceBindings()) video.release();
     }
 
     /**
@@ -586,6 +615,7 @@ public class AnimationPlayer {
         }
         epoch++;
         audioReleased = false;
+        resumeVideo();
         activeMarker.set(name);
         updateRange();
         completedCycles = 0;
@@ -686,6 +716,8 @@ public class AnimationPlayer {
      */
     void setSuspended(boolean suspended) {
         this.suspended = suspended;
+        if (suspended && !hasInPlaceBindings()) video.release();
+        else video.resume();
         updateClock();
     }
 
@@ -700,6 +732,8 @@ public class AnimationPlayer {
         epoch++;
         releaseAudio();
         audioReleased = false;
+        video.setDocument(file);
+        resumeVideo();
         hasSound = file != null && AudioEngine.hasAudio(file.animation());
         slots.clear();
         if (file != null) {
@@ -773,7 +807,15 @@ public class AnimationPlayer {
         AnimationFile file = getAnimation();
         Frame sampled = file == null ? null : Evaluator.sample(file.animation(), getCurrentTime());
         frame.set(sampled);
+        syncVideo();
         bindings.forEach((name, binding) -> apply(binding, slots.get(name), sampled));
+    }
+
+    private void syncVideo() {
+        if (video != null) {
+            video.sync(getFrame(), getStatus() == Status.PLAYING && (!suspended || hasInPlaceBindings())
+                    && !currentTime.isBound(), getRate(), reversed, isMuted(), masterVolume());
+        }
     }
 
     private static void apply(SlotBinding binding, SlotLayer slot, Frame frame) {
@@ -796,6 +838,7 @@ public class AnimationPlayer {
         if (!run && audio != null) {
             audio.silence();
         }
+        syncVideo();
     }
 
     boolean hasInPlaceBindings() {

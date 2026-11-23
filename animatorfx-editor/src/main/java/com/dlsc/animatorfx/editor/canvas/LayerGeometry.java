@@ -5,6 +5,7 @@ import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.AudioLayer;
 import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.ImageLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Layer;
 import com.dlsc.animatorfx.model.Layers;
 import com.dlsc.animatorfx.model.Mask;
@@ -133,6 +134,7 @@ public final class LayerGeometry {
         return switch (layer) {
             case SlotLayer slot -> new Box(0, 0, slot.width(), slot.height());
             case ImageLayer image -> new Box(0, 0, image.width(), image.height());
+            case VideoLayer video -> new Box(0, 0, video.width(), video.height());
             case ShapeLayer shape -> {
                 LayerState state = state(shape.id());
                 PathData path = state != null && state.fillPath() != null ? state.fillPath()

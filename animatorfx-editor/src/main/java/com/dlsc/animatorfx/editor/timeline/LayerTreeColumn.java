@@ -14,6 +14,7 @@ import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import java.util.HashSet;
 import java.util.Set;
 import com.dlsc.animatorfx.model.Layers;
@@ -605,6 +606,7 @@ public final class LayerTreeColumn extends Region {
             case GroupLayer group -> expanded ? Material2OutlinedAL.FOLDER_OPEN : Material2OutlinedAL.FOLDER;
             case SlotLayer slot -> Material2OutlinedMZ.WIDGETS;
             case AudioLayer audio -> Material2AL.AUDIOTRACK;
+            case VideoLayer video -> Material2MZ.VIDEOCAM;
         };
     }
 
@@ -641,6 +643,8 @@ public final class LayerTreeColumn extends Region {
         private final Label badge = new Label();
         private final FontIcon eyeIcon = new FontIcon(Material2MZ.VISIBILITY);
         private final FontIcon lockIcon = new FontIcon(Material2AL.LOCK_OPEN);
+        private final FontIcon muteIcon = new FontIcon(Material2MZ.VOLUME_UP);
+        private final Button mute = rowButton("video-mute", muteIcon);
         private final Button eye = rowButton("eye", eyeIcon);
         private final Button lock = rowButton("lock", lockIcon);
         private LayerRow row;
@@ -658,7 +662,14 @@ public final class LayerTreeColumn extends Region {
             badge.getStyleClass().addAll("layer-badge", "mono");
             badge.setMinWidth(Region.USE_PREF_SIZE);
             HBox.setMargin(badge, new Insets(0, 4, 0, 0));
-            getChildren().addAll(indent, disclosure, typeIcon, name, badge, eye, lock);
+            getChildren().addAll(indent, disclosure, typeIcon, name, badge, mute, eye, lock);
+            mute.setTooltip(new Tooltip("Mute the video's sound without hiding its picture"));
+            mute.setOnAction(event -> {
+                if (row.layer() instanceof VideoLayer video) {
+                    doc().execute(Commands.updateLayer(video.muted() ? "Unmute Video" : "Mute Video", video.id(),
+                            layer -> ((VideoLayer) layer).withMuted(!video.muted())));
+                }
+            });
 
             disclosure.setOnAction(e -> {
                 var expanded = doc().getViewState().getExpandedLayerIds();
@@ -709,6 +720,11 @@ public final class LayerTreeColumn extends Region {
             boolean shown = layer.base().visible() && !(layer instanceof AudioLayer sound && sound.muted());
             eyeIcon.setIconCode(audio ? (shown ? Material2MZ.VOLUME_UP : Material2MZ.VOLUME_OFF)
                     : shown ? Material2MZ.VISIBILITY : Material2MZ.VISIBILITY_OFF);
+            mute.setVisible(layer instanceof VideoLayer);
+            mute.setManaged(layer instanceof VideoLayer);
+            boolean muted = layer instanceof VideoLayer video && video.muted();
+            muteIcon.setIconCode(muted ? Material2MZ.VOLUME_OFF : Material2MZ.VOLUME_UP);
+            mute.pseudoClassStateChanged(ACTIVE, muted);
             pseudoClassStateChanged(AUDIO, audio);
             lockIcon.setIconCode(layer.base().locked() ? Material2AL.LOCK : Material2AL.LOCK_OPEN);
             eye.pseudoClassStateChanged(ACTIVE, !shown);

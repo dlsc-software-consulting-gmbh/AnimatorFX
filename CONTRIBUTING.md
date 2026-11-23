@@ -42,6 +42,23 @@ included in local builds; on a machine with a working audio device, run them alo
 
 For a local build without an audio device, use `-DexcludedGroups=native-audio` as CI does.
 
+Video scheduling, asset and editor tests are portable. Real video decoding is opt-in and needs
+a display and working JavaFX media backend. With JDK 27, run the original red/blue fixture
+through both the player and editor:
+
+```bash
+./mvnw -B -ntp -pl animatorfx-editor -am \
+  '-Dtest=NativeVideoPlaybackTest,NativeVideoImportTest' \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  -Danimatorfx.test.video="$PWD/animatorfx-player/src/test/resources/com/dlsc/animatorfx/player/video/red-blue.mp4" \
+  '-Dsurefire.jvm.args=--enable-native-access=javafx.graphics,javafx.media --add-exports javafx.graphics/com.sun.glass.ui=ALL-UNNAMED --add-exports javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-opens javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-reads org.kordamp.ikonli.core=ALL-UNNAMED -Danimatorfx.nativeVideo=true' test
+```
+
+These checks inspect decoded colors, muted picture progression, soundtrack state, independent
+instances, cleanup and editor import/save/reopen. The audio-only MP4 refusal case uses macOS
+`afconvert` and is skipped when unavailable. The checked-in video is original; its provenance
+includes the development-only generation command. Building or running AnimatorFX needs no FFmpeg.
+
 ## Pull requests
 
 - Branch from the repository's current default branch. Keep changes focused and explain their purpose.

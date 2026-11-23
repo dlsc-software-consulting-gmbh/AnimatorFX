@@ -2,6 +2,7 @@ package com.dlsc.animatorfx.editor.ui;
 
 import com.dlsc.animatorfx.editor.audio.SoundPreview;
 import com.dlsc.animatorfx.editor.audio.AudioImport;
+import com.dlsc.animatorfx.editor.video.VideoImport;
 import com.dlsc.animatorfx.editor.canvas.CanvasView;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.editor.inspector.sections.MotionPathSection;
@@ -111,7 +112,7 @@ public final class MainWindow {
         importActions = new ImportActions(workspace, noticeBar, this.dialogs, () -> stage);
         exportActions = new ExportActions(workspace, noticeBar, this.dialogs, () -> stage);
         HeaderBarView header = new HeaderBarView(
-                new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme, icon);
+                new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme, icon, canvasView);
         HeaderBar.systemColorSchemeProperty(stage).bind(Bindings.when(theme.darkProperty())
                 .then(ColorScheme.DARK).otherwise(ColorScheme.LIGHT));
         HeaderBar.systemButtonHeightProperty(stage).bind(header.heightProperty());
@@ -517,6 +518,14 @@ public final class MainWindow {
             if (!isDroppable(file)) {
                 continue;
             }
+            if (VideoImport.isVideo(file.toPath())) {
+                EditorDocument document = workspace.getActiveDocument();
+                if (document != null) {
+                    importActions.importVideo(document, file.toPath());
+                    opened = true;
+                }
+                continue;
+            }
             if (AudioImport.isAudio(file.toPath())) {
                 EditorDocument document = workspace.getActiveDocument();
                 if (document != null) {
@@ -534,7 +543,8 @@ public final class MainWindow {
 
     static boolean isDroppable(File file) {
         return file.isFile() && (file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".afx")
-                || ImportActions.Kind.of(file.toPath()).isPresent() || AudioImport.isAudio(file.toPath()));
+                || ImportActions.Kind.of(file.toPath()).isPresent() || AudioImport.isAudio(file.toPath())
+                || VideoImport.isVideo(file.toPath()));
     }
 
     private void bindTitle(EditorDocument document) {

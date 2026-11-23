@@ -1,6 +1,7 @@
 package com.dlsc.animatorfx.editor.canvas;
 
 import com.dlsc.animatorfx.editor.audio.EditorAudio;
+import com.dlsc.animatorfx.editor.video.EditorVideo;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.player.AnimationPlayer;
 import com.dlsc.animatorfx.player.AnimationView;
@@ -27,9 +28,10 @@ final class Playback {
     private boolean driving;
     private long lastScrub;
 
-    Playback(AnimationView view) {
+    Playback(AnimationView view, java.util.function.Consumer<String> notice) {
         this.view = view;
         this.audio = EditorAudio.install(view.getPlayer(), this::isPlaying);
+        EditorVideo.install(view.getPlayer(), notice);
         view.statusProperty().addListener((obs, oldStatus, status) -> {
             playing.set(status == AnimationPlayer.Status.PLAYING);
             pushTime();
@@ -76,6 +78,7 @@ final class Playback {
     void setDocument(EditorDocument document) {
         view.pause();
         audio.release();
+        view.getPlayer().dispose();
         this.document = document;
     }
 

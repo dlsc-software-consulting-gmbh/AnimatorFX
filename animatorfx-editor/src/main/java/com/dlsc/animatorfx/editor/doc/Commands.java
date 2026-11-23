@@ -5,6 +5,7 @@ import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Effect;
 import com.dlsc.animatorfx.model.Geometries;
@@ -483,10 +484,32 @@ public final class Commands {
         });
     }
 
-    /** Sets where in its sound an audio layer starts, in seconds; never before the start of the sound. */
+    /** Adds an embedded video at the frame of the playhead, preserving its natural dimensions. */
+    public static Command addVideoLayer(String layerId, String name, String assetId, double time,
+                                        double clipDuration, double width, double height) {
+        Objects.requireNonNull(layerId, "layerId");
+        Objects.requireNonNull(name, "name");
+        return command("Add Video", animation -> {
+            if (animation.assets().stream().noneMatch(asset -> asset.id().equals(assetId)
+                    && asset.kind() == Asset.Kind.VIDEO) || !(width > 0) || !Double.isFinite(width)
+                    || !(height > 0) || !Double.isFinite(height)) return animation;
+            double duration = Math.max(0, animation.duration());
+            double in = animation.frameRate() > 0
+                    ? Math.round(keyTime(time) * animation.frameRate()) / animation.frameRate() : keyTime(time);
+            if (in >= duration - Animatable.TIME_EPSILON) in = 0;
+            double out = clipDuration > 0 && Double.isFinite(clipDuration)
+                    ? Math.min(in + clipDuration, duration) : duration;
+            VideoLayer video = new VideoLayer(LayerBase.create(name, out).withId(layerId).withInPoint(in),
+                    assetId, width, height, 0, Animatable.of(1.0), false, false);
+            return Layers.insert(animation, null, animation.layers().size(), video);
+        });
+    }
+
+    /** Sets where in its source an audio or video layer starts, in seconds; never before the start. */
     public static Command setClipOffset(String id, double clipOffset) {
         return command("Change Clip Offset", a -> Double.isFinite(clipOffset) ? editLayer(a, id,
-                layer -> layer instanceof AudioLayer audio ? audio.withClipOffset(clipOffset) : layer) : a);
+                layer -> layer instanceof AudioLayer audio ? audio.withClipOffset(clipOffset)
+                        : layer instanceof VideoLayer video ? video.withClipOffset(clipOffset) : layer) : a);
     }
 
     /**
@@ -933,6 +956,12 @@ public final class Commands {
             Layer result = fn.apply(layer);
             if (result instanceof AudioLayer audio) {
                 result = inRange(audio);
+            } else if (result instanceof VideoLayer video) {
+                double offset = Double.isFinite(video.clipOffset()) ? Math.max(0, video.clipOffset()) : 0;
+                double width = video.width() > 0 && Double.isFinite(video.width()) ? video.width() : 1;
+                double height = video.height() > 0 && Double.isFinite(video.height()) ? video.height() : 1;
+                result = video.withClipOffset(offset).withWidth(width).withHeight(height)
+                        .withVolume(limited(video.volume(), 0, 1, 1));
             }
             return layer.equals(result) ? layer : result;
         });

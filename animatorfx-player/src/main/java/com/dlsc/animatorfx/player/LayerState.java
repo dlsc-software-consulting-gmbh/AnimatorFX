@@ -36,7 +36,7 @@ import java.util.Objects;
  * @param scale       {@code transform.scale}
  * @param rotation    {@code transform.rotation} in degrees, plus the motion path's tangent angle
  *                    when the layer is oriented to its path
- * @param volume      the volume of an audio layer, as stored in the document ({@code 0..1}); 1
+ * @param volume      the volume of an audio or video layer, as stored in the document ({@code 0..1}); 1
  *                    for other layers
  * @param balance     the balance of an audio layer, {@code -1} (left) to {@code 1} (right); 0 for
  *                    other layers

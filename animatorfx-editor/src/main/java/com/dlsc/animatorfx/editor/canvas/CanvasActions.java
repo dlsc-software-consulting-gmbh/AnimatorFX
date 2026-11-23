@@ -7,6 +7,7 @@ import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Geometry;
 import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.ImageLayer;
@@ -252,6 +253,8 @@ public final class CanvasActions {
                     assetIds.add(image.assetId());
                 } else if (layer instanceof AudioLayer audio) {
                     assetIds.add(audio.assetId());
+                } else if (layer instanceof VideoLayer video) {
+                    assetIds.add(video.assetId());
                 } else if (layer instanceof TextLayer text && text.fontAssetId() != null) {
                     assetIds.add(text.fontAssetId());
                 }

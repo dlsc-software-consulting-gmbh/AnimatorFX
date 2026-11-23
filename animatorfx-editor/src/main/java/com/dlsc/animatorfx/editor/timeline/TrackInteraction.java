@@ -8,6 +8,7 @@ import com.dlsc.animatorfx.editor.timeline.TrackPane.BarPart;
 import com.dlsc.animatorfx.editor.timeline.TrackPane.Hit;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Keyframe;
 import com.dlsc.animatorfx.model.Layer;
@@ -39,7 +40,7 @@ import javafx.scene.input.MouseEvent;
  * <li>Free space: a drag selects the keyframes inside a marquee (Shift or Shortcut adds).</li>
  * <li>In/out bars: dragging the body moves the range, dragging an end trims it.</li>
  * <li>Bars of audio layers: the same, but trimming the start keeps the sound in place, and
- * Alt-dragging the body slides the sound under the bar; see {@link #dragAudioBar}.</li>
+ * Alt-dragging the body slides the source under the bar; see {@link #dragMediaBar}.</li>
  * </ul>
  * Times snap to frames unless Alt is held (always on audio bars). Escape cancels a drag.
  */
@@ -289,7 +290,11 @@ final class TrackInteraction {
             return;
         }
         if (layer instanceof AudioLayer audio) {
-            dragAudioBar(doc, start, audio, delta, free);
+            dragMediaBar(doc, start, audio, audio.clipOffset(), audio.assetId(), delta, free);
+            return;
+        }
+        if (layer instanceof VideoLayer video) {
+            dragMediaBar(doc, start, video, video.clipOffset(), video.assetId(), delta, free);
             return;
         }
         double duration = start.duration();
@@ -322,21 +327,21 @@ final class TrackInteraction {
     }
 
     /**
-     * The bar of an audio layer. Times always snap to frames here, because Alt has another
+     * The bar of an audio or video layer. Times always snap to frames here, because Alt has another
      * meaning: Alt-dragging the body slides the sound under the bar (the clip offset changes,
      * the bar stays). Dragging the start trims it and moves the clip offset along, so the sound
      * stays where it is in time; with Alt only the in-point moves and the sound moves with it.
      * Dragging the body moves the bar with its sound, dragging the end trims the end.
      */
-    private void dragAudioBar(EditorDocument doc, Animation start, AudioLayer layer, double delta, boolean alt) {
+    private void dragMediaBar(EditorDocument doc, Animation start, Layer layer, double offset, String assetId,
+                              double delta, boolean alt) {
         double duration = start.duration();
         double frame = Math.min(TimeScale.frame(start.frameRate()), duration);
         double in = layer.base().inPoint();
         double out = layer.base().outPoint();
-        double offset = layer.clipOffset();
         String name;
         if (bar.part() == BarPart.BODY && slip) {
-            double clip = timeline.clipDurationOf(layer.assetId());
+            double clip = timeline.clipDurationOf(assetId);
             double rate = start.frameRate();
             offset = AudioClips.slide(offset, rate > 0 ? Math.round(delta * rate) / rate : delta, clip);
             name = "Slide Clip";
@@ -363,10 +368,14 @@ final class TrackInteraction {
         double newOut = out;
         double newOffset = offset;
         doc.executeCoalesced(gestureKey, Commands.setDocument(name, current -> Layers.replace(start, bar.layerId(), l -> {
-            AudioLayer audio = (AudioLayer) l;
-            LayerBase base = audio.base().withInPoint(newIn).withOutPoint(newOut);
-            return base.equals(audio.base()) && newOffset == audio.clipOffset() ? l
-                    : audio.withBase(base).withClipOffset(newOffset);
+            LayerBase base = l.base().withInPoint(newIn).withOutPoint(newOut);
+            if (l instanceof AudioLayer audio) {
+                return base.equals(audio.base()) && newOffset == audio.clipOffset() ? l
+                        : audio.withBase(base).withClipOffset(newOffset);
+            }
+            VideoLayer video = (VideoLayer) l;
+            return base.equals(video.base()) && newOffset == video.clipOffset() ? l
+                    : video.withBase(base).withClipOffset(newOffset);
         })));
     }
 

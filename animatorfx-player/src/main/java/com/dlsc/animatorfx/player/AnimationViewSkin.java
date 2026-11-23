@@ -15,10 +15,10 @@ import javafx.scene.transform.Affine;
  */
 public class AnimationViewSkin extends SkinBase<AnimationView> {
 
-    private final Renderer renderer = new Renderer();
+    private final Renderer renderer;
     private final Affine contentTransform = new Affine();
     private final Rectangle clip = new Rectangle();
-    private final Group content = new Group(renderer.getRoot());
+    private final Group content;
     private final AnimationPlayer player;
     private final InvalidationListener playerListener = observable -> sync();
     private final Runnable bindingsListener = this::attachEmbeddedNodes;
@@ -30,6 +30,12 @@ public class AnimationViewSkin extends SkinBase<AnimationView> {
     public AnimationViewSkin(AnimationView view) {
         super(view);
         player = view.getPlayer();
+        renderer = new Renderer(player.video());
+        content = new Group(renderer.getRoot());
+        player.resumeVideo();
+        registerChangeListener(view.skinProperty(), observable -> {
+            if (view.getSkin() == this) player.resumeVideo();
+        });
         renderer.getRoot().getTransforms().add(contentTransform);
         content.setClip(clip);
         // the view's size does not depend on what the content happens to cover
@@ -72,6 +78,8 @@ public class AnimationViewSkin extends SkinBase<AnimationView> {
         player.animationProperty().removeListener(playerListener);
         player.removeBindingsListener(bindingsListener);
         getChildren().remove(content);
+        renderer.dispose();
+        player.video().release();
         super.dispose();
     }
 

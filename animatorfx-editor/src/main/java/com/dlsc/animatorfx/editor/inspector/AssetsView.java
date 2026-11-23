@@ -1,6 +1,8 @@
 package com.dlsc.animatorfx.editor.inspector;
 
 import com.dlsc.animatorfx.editor.audio.AudioImport;
+import com.dlsc.animatorfx.editor.video.VideoImport;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.editor.canvas.tools.NewLayers;
 import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
@@ -85,7 +87,8 @@ public final class AssetsView extends VBox {
     private Function<Window, List<Path>> filePicker = AssetsView::chooseFiles;
     private final InvalidationListener update = obs -> update();
     private final InvalidationListener soundArrived = obs -> {
-        if (listed != null && listed.stream().anyMatch(asset -> asset.kind() == Asset.Kind.AUDIO)) {
+        if (listed != null && listed.stream().anyMatch(asset -> asset.kind() == Asset.Kind.AUDIO
+                || asset.kind() == Asset.Kind.VIDEO)) {
             listed = null;
             update();
         }
@@ -127,6 +130,7 @@ public final class AssetsView extends VBox {
 
         // the length and the waveform of a sound arrive after its row was made
         WaveformCache.shared().revisionProperty().addListener(new WeakInvalidationListener(soundArrived));
+        VideoImport.revisionProperty().addListener(new WeakInvalidationListener(soundArrived));
         document.addListener((obs, oldDoc, newDoc) -> {
             if (oldDoc != null) {
                 oldDoc.animationProperty().removeListener(update);
@@ -184,11 +188,12 @@ public final class AssetsView extends VBox {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Add Assets");
         chooser.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("Images, fonts and sounds", "*.png", "*.jpg", "*.jpeg", "*.ttf", "*.otf",
-                        "*.mp3", "*.wav", "*.aif", "*.aiff", "*.m4a", "*.aac"),
+                new FileChooser.ExtensionFilter("Images, fonts, sounds and videos", "*.png", "*.jpg", "*.jpeg", "*.ttf", "*.otf",
+                        "*.mp3", "*.wav", "*.aif", "*.aiff", "*.m4a", "*.aac", "*.mp4", "*.m4v"),
                 new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg"),
                 new FileChooser.ExtensionFilter("Fonts", "*.ttf", "*.otf"),
-                new FileChooser.ExtensionFilter("Sounds", "*.mp3", "*.wav", "*.aif", "*.aiff", "*.m4a", "*.aac"));
+                new FileChooser.ExtensionFilter("Sounds", "*.mp3", "*.wav", "*.aif", "*.aiff", "*.m4a", "*.aac"),
+                new FileChooser.ExtensionFilter("Videos", "*.mp4", "*.m4v"));
         List<File> files = chooser.showOpenMultipleDialog(owner);
         return files == null ? List.of() : files.stream().map(File::toPath).toList();
     }
@@ -207,6 +212,22 @@ public final class AssetsView extends VBox {
             String name = file.getFileName().toString();
             int dot = name.lastIndexOf('.');
             String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+            if (VideoImport.isVideo(file)) {
+                VideoImport.read(file, text -> {
+                    reading.add(text);
+                    showProblems(problems);
+                    return () -> { reading.remove(text); showProblems(problems); };
+                }).whenComplete((clip, error) -> {
+                    if (error != null) {
+                        Throwable cause = error.getCause() == null ? error : error.getCause();
+                        problems.add("Could not add " + file.getFileName() + ": " + cause.getMessage());
+                    } else if (getDocument() == doc) {
+                        VideoImport.addAsset(doc, clip);
+                    }
+                    showProblems(problems);
+                });
+                continue;
+            }
             if (AudioImport.isAudio(file)) {
                 addSound(doc, file, problems);
                 continue;
@@ -217,7 +238,7 @@ public final class AssetsView extends VBox {
                 default -> null;
             };
             if (kind == null) {
-                problems.add(name + " is not an image (PNG, JPEG), a font (TTF, OTF) or a sound (MP3, WAV, AIFF, AAC).");
+                problems.add(name + " is not an image (PNG, JPEG), a font (TTF, OTF), a sound (MP3, WAV, AIFF, AAC) or a video (MP4, M4V).");
                 continue;
             }
             byte[] bytes;
@@ -276,6 +297,21 @@ public final class AssetsView extends VBox {
         return doc == null ? Optional.empty() : AudioImport.place(doc, assetId);
     }
 
+    /** Places a stored video once its metadata is ready, without duplicating its bytes. */
+    public java.util.concurrent.CompletableFuture<Optional<String>> placeVideo(String assetId) {
+        EditorDocument doc = getDocument();
+        Asset asset = doc == null ? null : doc.getAnimation().assets().stream()
+                .filter(value -> value.kind() == Asset.Kind.VIDEO && value.id().equals(assetId)).findFirst().orElse(null);
+        if (asset == null) return java.util.concurrent.CompletableFuture.completedFuture(Optional.empty());
+        byte[] source = doc.getFileContent().assets().get(assetId);
+        return VideoImport.metadata(doc, asset).thenApply(info -> getDocument() == doc
+                && doc.getFileContent().assets().get(assetId) == source
+                ? VideoImport.place(doc, assetId) : Optional.<String>empty()).exceptionally(error -> {
+                    if (getDocument() == doc) setMessage("Could not place " + asset.name() + ": video metadata is unavailable.");
+                    return Optional.empty();
+                });
+    }
+
     /** Removes an asset as one undo step; refuses, with a message, while layers or cues use it. */
     public void remove(String assetId) {
         EditorDocument doc = getDocument();
@@ -324,6 +360,7 @@ public final class AssetsView extends VBox {
         for (Layer layer : Layers.flatten(animation)) {
             if (layer instanceof ImageLayer image && image.assetId().equals(assetId)
                     || layer instanceof TextLayer text && assetId.equals(text.fontAssetId())
+                    || layer instanceof VideoLayer video && video.assetId().equals(assetId)
                     || layer instanceof AudioLayer audio && audio.assetId().equals(assetId)) {
                 count++;
             }
@@ -376,11 +413,16 @@ public final class AssetsView extends VBox {
             case IMAGE -> "Image";
             case FONT -> "Font";
             case AUDIO -> "Audio";
+            case VIDEO -> "Video";
         };
         String usage = users == 0 ? "unused" : "used " + users + "×";
         if (asset.kind() == Asset.Kind.AUDIO) {
             // two lines: with the length there is more to say than the panel is wide
             return kind + AudioImport.info(doc, asset).map(info -> " · " + info.durationText()).orElse("")
+                    + "\n" + size + " · " + usage;
+        }
+        if (asset.kind() == Asset.Kind.VIDEO) {
+            return "Video" + VideoImport.info(doc, asset).map(info -> " · " + info.description()).orElse("")
                     + "\n" + size + " · " + usage;
         }
         return kind + " · " + size + " · " + usage;
@@ -412,6 +454,8 @@ public final class AssetsView extends VBox {
                 sample.setFont(font);
             }
             thumbnail.getChildren().add(sample);
+        } else if (asset.kind() == Asset.Kind.VIDEO) {
+            thumbnail.getChildren().add(new FontIcon(Material2MZ.VIDEOCAM));
         } else {
             Optional<Waveform> waveform = AudioImport.waveform(doc, asset);
             if (waveform.isPresent()) {
@@ -449,6 +493,12 @@ public final class AssetsView extends VBox {
             Button place = iconButton(Material2MZ.PLAYLIST_ADD, "Place on the timeline as a new audio layer at the playhead");
             place.getStyleClass().add("asset-place");
             place.setOnAction(e -> placeAudio(asset.id()));
+            row.getChildren().add(place);
+        }
+        if (asset.kind() == Asset.Kind.VIDEO) {
+            Button place = iconButton(Material2MZ.VIDEO_LIBRARY, "Place as a video layer at the playhead");
+            place.getStyleClass().add("asset-place");
+            place.setOnAction(event -> placeVideo(asset.id()));
             row.getChildren().add(place);
         }
         Button remove = iconButton(Material2AL.DELETE_OUTLINE, "Remove the asset");
