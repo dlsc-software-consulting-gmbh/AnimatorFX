@@ -3,9 +3,9 @@ package com.dlsc.animatorfx.editor.timeline;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.editor.ui.Palette;
 import com.dlsc.animatorfx.editor.ui.Palette.Tone;
+import com.dlsc.animatorfx.editor.ui.TiledCanvas;
 import com.dlsc.animatorfx.model.Animation;
 import javafx.geometry.VPos;
-import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.input.MouseButton;
@@ -20,7 +20,7 @@ import javafx.scene.layout.Region;
 public final class TimeRuler extends Region {
 
     private final TimelineView timeline;
-    private final Canvas canvas = new Canvas();
+    private final TiledCanvas canvas = new TiledCanvas();
     /** Carries the font of the tick labels, which comes from the stylesheet. */
     private final Label fontProbe = new Label();
 
@@ -52,10 +52,10 @@ public final class TimeRuler extends Region {
     void draw() {
         double width = getWidth();
         double height = getHeight();
-        canvas.setWidth(width);
-        canvas.setHeight(height);
-        GraphicsContext g = canvas.getGraphicsContext2D();
-        g.clearRect(0, 0, width, height);
+        canvas.draw(width, height, g -> draw(g, width, height));
+    }
+
+    private void draw(GraphicsContext g, double width, double height) {
         EditorDocument doc = timeline.getDocument();
         Palette palette = timeline.getPalette();
         g.setFill(palette.get(Tone.PANEL_ALT));

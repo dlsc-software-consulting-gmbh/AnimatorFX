@@ -440,6 +440,9 @@ dialogs of the operating system.
 | Image | `I` | Places a PNG or JPEG, which becomes an asset of the document |
 | Slot | `K` | Drag a rectangle and name the slot |
 
+Horizontal and vertical canvas scrollbars appear when the zoomed artboard exceeds the viewport.
+Drag their thumbs to reach the off-screen parts; wheel/trackpad and Space-drag panning still work.
+
 | Action | Shortcut (`Cmd` on macOS, `Ctrl` elsewhere) |
 |---|---|
 | Play / pause | `Space` |
@@ -601,7 +604,8 @@ location, for example `-Danimatorfx.configDir=/path/to/dir` with `mvn javafx:run
 
 ### Video layers
 
-Choose **File > Import > Video...**, or drop an MP4/M4V file onto the window. Clips up to
+Click **Video** in the left toolbar, choose **File > Import > Video...**, or drop an MP4/M4V
+file onto the window. Clips up to
 **50 MiB** are embedded unchanged and placed at the playhead with their natural dimensions,
 as one undoable import. Probing is asynchronous, never autoplays, and refuses audio-only or
 unsupported files without adding partial content.

@@ -33,7 +33,8 @@ public final class ToolRail extends VBox {
             button.setId("tool-" + kind.name().toLowerCase(Locale.ROOT));
             button.getStyleClass().add("tool-button");
             button.setFocusTraversable(false);
-            button.setTooltip(new Tooltip(kind.displayName() + " (" + kind.shortcut().getName() + ")"));
+            String shortcut = kind.shortcut() == null ? "" : " (" + kind.shortcut().getName() + ")";
+            button.setTooltip(new Tooltip(kind.displayName() + shortcut));
             // a tool stays active when its button is clicked again
             button.setOnAction(e -> {
                 setActiveTool(kind);

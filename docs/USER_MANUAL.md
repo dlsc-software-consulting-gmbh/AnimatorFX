@@ -121,7 +121,8 @@ Press **Space** to hear the full mix. Scrubbing the ruler previews audio layers,
 
 ### Add video
 
-Choose **File > Import > Video...**, or drop an **MP4/M4V** file onto the window. The original
+Click **Video** in the left toolbar, choose **File > Import > Video...**, or drop an **MP4/M4V**
+file onto the window. The original
 clip is embedded in the project (maximum **50 MiB**), placed at the playhead and selected.
 H.264/AAC is the primary supported combination; actual decoding depends on JavaFX and the
 platform's codecs. Audio-only files and failed probes add nothing.
@@ -294,6 +295,10 @@ Use **Cmd** on macOS and **Ctrl** elsewhere for shortcuts shown with **Cmd/Ctrl*
 | Undo; redo | `Cmd/Ctrl` + `Z`; `Shift` + `Cmd/Ctrl` + `Z` |
 | Group; ungroup | `Cmd/Ctrl` + `G`; `Shift` + `Cmd/Ctrl` + `G` |
 | Save; save as | `Cmd/Ctrl` + `S`; `Shift` + `Cmd/Ctrl` + `S` |
+
+When the zoomed artboard is larger than the canvas viewport, scrollbars appear along the bottom
+and right edges as needed. Drag their thumbs to navigate, or continue using wheel/trackpad
+scrolling and **Space** + drag. The scrollbars hide again when the artboard fits.
 
 ### Diagnose a problem
 

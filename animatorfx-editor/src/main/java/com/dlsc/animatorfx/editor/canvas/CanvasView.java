@@ -98,6 +98,7 @@ public final class CanvasView extends Region {
     private final Affine worldTransform = new Affine();
     private final Overlay overlay;
     private final Pane editorLayer = new Pane();
+    private final CanvasScrollBars scrollBars = new CanvasScrollBars(this);
     private final LayerGeometry geometry = new LayerGeometry(this);
     private final Playback playback = new Playback(view, this::notice);
     private final CanvasActions actions;
@@ -152,7 +153,7 @@ public final class CanvasView extends Region {
         overlay = new Overlay(this);
         editorLayer.setPickOnBounds(false);
         editorLayer.setManaged(false);
-        getChildren().addAll(grid, artboard, world, overlay, editorLayer);
+        getChildren().addAll(grid, artboard, world, overlay, editorLayer, scrollBars);
 
         Rectangle clip = new Rectangle();
         clip.widthProperty().bind(widthProperty());
@@ -677,6 +678,7 @@ public final class CanvasView extends Region {
         if (doc != null && width > 0 && height > 0) {
             autoFit(doc);
         }
+        scrollBars.update();
         overlay.resizeRelocate(0, 0, width, height);
         editorLayer.resizeRelocate(0, 0, width, height);
         if (doc == null) {

@@ -3,6 +3,7 @@ package com.dlsc.animatorfx.editor.timeline;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.editor.ui.Palette;
 import com.dlsc.animatorfx.editor.ui.Palette.Tone;
+import com.dlsc.animatorfx.editor.ui.TiledCanvas;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Marker;
 import java.util.List;
@@ -10,7 +11,6 @@ import java.util.Optional;
 import javafx.css.PseudoClass;
 import javafx.geometry.VPos;
 import javafx.scene.Cursor;
-import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
@@ -51,7 +51,7 @@ public final class MarkerLane extends Region {
     private static final double DRAG_THRESHOLD = 3;
 
     private final TimelineView timeline;
-    private final Canvas canvas = new Canvas();
+    private final TiledCanvas canvas = new TiledCanvas();
     private final Label fontProbe = new Label();
     private final TextField renameField = new TextField();
     private final Label renameError = new Label();
@@ -338,10 +338,11 @@ public final class MarkerLane extends Region {
     void draw() {
         double width = getWidth();
         double height = getHeight();
-        canvas.setWidth(width);
-        canvas.setHeight(height);
-        GraphicsContext g = canvas.getGraphicsContext2D();
-        g.clearRect(0, 0, width, height);
+        canvas.draw(width, height, g -> draw(g, width, height));
+        placeRenameField();
+    }
+
+    private void draw(GraphicsContext g, double width, double height) {
         Palette palette = timeline.getPalette();
         g.setFill(palette.get(Tone.PANEL_ALT));
         g.fillRect(0, 0, width, height);
@@ -379,6 +380,5 @@ public final class MarkerLane extends Region {
         }
         g.setStroke(palette.get(Tone.LINE));
         g.strokeLine(0, height - 0.5, width, height - 0.5);
-        placeRenameField();
     }
 }

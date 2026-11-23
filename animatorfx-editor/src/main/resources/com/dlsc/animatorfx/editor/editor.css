@@ -1614,6 +1614,8 @@
     -fx-shape: "M0 0 L11 0 L11 4 L5.5 9 L0 4 Z";
 }
 
+.canvas-scroll-corner,
+.canvas-scroll-bar,
 .timeline-scroll-bar {
     -fx-background-color: -afx-panel-alt;
     -fx-background-insets: 0;
@@ -1621,23 +1623,30 @@
     -fx-opacity: 1;
 }
 
+.canvas-scroll-bar > .track,
+.canvas-scroll-bar > .track-background,
 .timeline-scroll-bar > .track,
 .timeline-scroll-bar > .track-background {
     -fx-background-color: transparent;
     -fx-border-width: 0;
 }
 
+.canvas-scroll-bar > .thumb,
 .timeline-scroll-bar > .thumb {
     -fx-background-color: -afx-line;
     -fx-background-insets: 2;
     -fx-background-radius: 4;
 }
 
+.canvas-scroll-bar > .thumb:hover,
+.canvas-scroll-bar > .thumb:pressed,
 .timeline-scroll-bar > .thumb:hover,
 .timeline-scroll-bar > .thumb:pressed {
     -fx-background-color: -afx-muted;
 }
 
+.canvas-scroll-bar > .increment-button,
+.canvas-scroll-bar > .decrement-button,
 .timeline-scroll-bar > .increment-button,
 .timeline-scroll-bar > .decrement-button {
     -fx-padding: 0;
@@ -1647,6 +1656,8 @@
     -fx-pref-height: 0;
 }
 
+.canvas-scroll-bar > .increment-button > .increment-arrow,
+.canvas-scroll-bar > .decrement-button > .decrement-arrow,
 .timeline-scroll-bar > .increment-button > .increment-arrow,
 .timeline-scroll-bar > .decrement-button > .decrement-arrow {
     -fx-shape: null;

@@ -4,6 +4,7 @@ import com.dlsc.animatorfx.editor.audio.SoundPreview;
 import com.dlsc.animatorfx.editor.audio.AudioImport;
 import com.dlsc.animatorfx.editor.video.VideoImport;
 import com.dlsc.animatorfx.editor.canvas.CanvasView;
+import com.dlsc.animatorfx.editor.canvas.tools.VideoTool;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.editor.inspector.sections.MotionPathSection;
 import com.dlsc.animatorfx.editor.session.RecoveryStore;
@@ -410,6 +411,7 @@ public final class MainWindow {
 
     /** Connects the canvas to the tool rail, the transport of the toolbar and the notice bar. */
     private void installCanvas() {
+        canvasView.setTool(ToolKind.VIDEO, new VideoTool(canvasView, importActions::chooseAndImportVideo));
         canvasView.activeToolProperty().bindBidirectional(toolRail.activeToolProperty());
         canvasView.loopProperty().bind(toolBar.loopProperty());
         toolBar.playingProperty().bind(canvasView.playingProperty());
