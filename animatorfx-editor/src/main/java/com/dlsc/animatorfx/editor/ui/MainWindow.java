@@ -23,6 +23,7 @@ import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextInputControl;
+import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.TransferMode;
@@ -98,6 +99,8 @@ public final class MainWindow {
      */
     public MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs) {
         this.stage = stage;
+        stage.getIcons().add(new Image(MainWindow.class.getResource(
+                "/com/dlsc/animatorfx/editor/app-icon.png").toExternalForm()));
         this.dialogs = dialogs != null ? dialogs : new SystemDialogs(dialogLayer);
         fileActions = new FileActions(workspace, this.dialogs, noticeBar, () -> stage);
         importActions = new ImportActions(workspace, noticeBar, this.dialogs, () -> stage);

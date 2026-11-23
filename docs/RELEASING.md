@@ -70,6 +70,9 @@ The repository must be public so jDeploy installers can download releases and up
 Keep `package.json`'s `jdeploy.javaVersion` and `jdeploy.javafxVersion` aligned with
 `editor.java.release` and `javafx.editor.version` in the parent POM when upgrading Java or JavaFX.
 The jDeploy action and CLI are pinned together in `.github/workflows/jdeploy.yml`.
+Keep `jdeploy.jdk` enabled: the separate JavaFX distribution includes `javafx.swing`, which
+requires `jdk.unsupported.desktop`. The plain JRE downloaded by jDeploy omits that module
+and fails during boot-layer initialization before the editor's launcher runs.
 
 ## Cutting a release
 
@@ -99,7 +102,7 @@ No release has been published merely by adding these files.
 
 ## Local checks without publishing
 
-With JDK 26 as `JAVA_HOME`:
+With JDK 27 as `JAVA_HOME`:
 
 ```bash
 ./mvnw -B -ntp clean verify
@@ -123,6 +126,12 @@ the portable suite has passed. Maven writes the executable editor JAR, dependenc
 and license notices to `animatorfx-editor/target/jdeploy/`; the second command assembles
 `jdeploy-bundle/`. Neither command publishes a release. Normal Linux CI also builds the Maven
 payload after its tests have passed.
+
+jDeploy reads `icon.png` from the repository root for installer and application branding.
+Run `sh animatorfx-editor/src/package/make-icons.sh` on macOS after replacing the master to
+refresh the native icon and About-dialog image. The executable JAR uses the plain
+`com.dlsc.animatorfx.editor.Launcher` entry point, not the JavaFX `Application` subclass,
+so JavaFX can be supplied on the classpath.
 
 ## Recovering from a failed release
 

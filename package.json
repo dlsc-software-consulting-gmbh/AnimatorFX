@@ -21,10 +21,10 @@
   "jdeploy": {
     "title": "AnimatorFX",
     "jar": "animatorfx-editor/target/jdeploy/AnimatorFX-jdeploy.jar",
-    "javaVersion": "26",
+    "javaVersion": "27",
     "javafx": true,
     "javafxVersion": "27.0.1",
-    "jdk": false,
+    "jdk": true,
     "downloadPage": {
       "platforms": [
         "windows-x64",
