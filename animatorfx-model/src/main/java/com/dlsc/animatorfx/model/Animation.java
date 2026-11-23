@@ -13,7 +13,7 @@ public record Animation(int formatVersion, String name, double width, double hei
                         double duration, Rgba background, List<Marker> markers, List<Asset> assets,
                         List<Layer> layers, List<SoundCue> cues) {
 
-    public static final int CURRENT_FORMAT = 2;
+    public static final int CURRENT_FORMAT = 3;
 
     public Animation {
         Objects.requireNonNull(name, "name");

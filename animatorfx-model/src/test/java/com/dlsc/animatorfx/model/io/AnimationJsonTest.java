@@ -76,7 +76,7 @@ class AnimationJsonTest {
     void minimalDocumentLoadsWithDefaults() throws Exception {
         Animation a = parse("{\"formatVersion\":1,\"width\":100,\"height\":100,\"duration\":1,\"layers\":[]}");
 
-        assertEquals(new Animation(2, "Untitled", 100, 100, 60, 1, Rgba.TRANSPARENT, List.of(), List.of(), List.of()),
+        assertEquals(new Animation(Animation.CURRENT_FORMAT, "Untitled", 100, 100, 60, 1, Rgba.TRANSPARENT, List.of(), List.of(), List.of()),
                 a);
         assertEquals(List.of(), a.cues());
     }
@@ -135,7 +135,7 @@ class AnimationJsonTest {
 
         assertEquals("""
                 {
-                  "formatVersion": 2,
+                  "formatVersion": 3,
                   "width": 100,
                   "height": 50,
                   "duration": 3,
@@ -180,7 +180,7 @@ class AnimationJsonTest {
 
     @Test
     void newerFormatVersionIsRejected() {
-        assertRejected("formatVersion", "{\"formatVersion\":3,\"width\":1,\"height\":1,\"duration\":1}");
+        assertRejected("formatVersion", "{\"formatVersion\":4,\"width\":1,\"height\":1,\"duration\":1}");
         assertRejected("formatVersion", "{\"formatVersion\":0,\"width\":1,\"height\":1,\"duration\":1}");
         assertRejected("formatVersion", "{\"formatVersion\":1.5,\"width\":1,\"height\":1,\"duration\":1}");
         assertRejected("formatVersion", "{\"formatVersion\":\"1\",\"width\":1,\"height\":1,\"duration\":1}");
@@ -202,7 +202,7 @@ class AnimationJsonTest {
         assertRejected("height", "{\"formatVersion\":1,\"width\":1,\"duration\":1}");
         assertRejected("duration", "{\"formatVersion\":1,\"width\":1,\"height\":1}");
         assertRejected("layers[0].type", layers("{}"));
-        assertRejected("layers[0].type", layers("{\"type\":\"video\"}"));
+        assertRejected("layers[0].type", layers("{\"type\":\"unknown\"}"));
         assertRejected("layers[0].geometry", layers("{\"type\":\"shape\"}"));
         assertRejected("layers[0].geometry.type", layers("{\"type\":\"shape\",\"geometry\":{}}"));
         assertRejected("layers[0].geometry.size", layers("{\"type\":\"shape\",\"geometry\":{\"type\":\"rect\"}}"));
@@ -244,7 +244,7 @@ class AnimationJsonTest {
         assertRejected("layers[0].motionPath.path.contours[0].v[1]", layers("{" + SHAPE
                 + ",\"motionPath\":{\"path\":{\"contours\":[{\"v\":[[0,0,0,0,0,0],[1,2,3]]}]},\"progress\":0}}"));
         assertRejected("layers[0].alignment", layers("{\"type\":\"text\",\"text\":\"\",\"alignment\":\"justify\"}"));
-        assertRejected("assets[0].kind", doc("\"assets\":[{\"id\":\"a\",\"kind\":\"video\",\"path\":\"assets/a\"}]"));
+        assertRejected("assets[0].kind", doc("\"assets\":[{\"id\":\"a\",\"kind\":\"unknown\",\"path\":\"assets/a\"}]"));
     }
 
     @Test
@@ -372,7 +372,6 @@ class AnimationJsonTest {
         Animation a = parse("{\"formatVersion\":1,\"name\":\"old\",\"width\":10,\"height\":20,\"duration\":3,"
                 + "\"layers\":[{" + SHAPE + ",\"id\":\"a\"}]}");
 
-        assertEquals(2, a.formatVersion());
         assertEquals(Animation.CURRENT_FORMAT, a.formatVersion());
         assertEquals(List.of(), a.cues());
         assertEquals(parse("{\"formatVersion\":2,\"name\":\"old\",\"width\":10,\"height\":20,\"duration\":3,"
@@ -410,7 +409,7 @@ class AnimationJsonTest {
 
         assertEquals("""
                 {
-                  "formatVersion": 2,
+                  "formatVersion": 3,
                   "width": 100,
                   "height": 50,
                   "duration": 3,

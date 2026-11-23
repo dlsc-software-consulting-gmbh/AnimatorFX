@@ -22,7 +22,8 @@
         <package.platform.options/>
         <!-- animatorfx.audio=off: no test makes sound; tests that look at sound install a recording output. -->
         <!-- TestFX brings OSGi onto the test class path; Ikonli then tries its OSGi resolver and needs to read it. -->
-        <surefire.jvm.args>${javafx.headless.jvm.args} --add-reads org.kordamp.ikonli.core=ALL-UNNAMED -Danimatorfx.audio=off</surefire.jvm.args>
+        <!-- JavaFX's bundled Headless backend supports the JavaFX 27 window APIs; Monocle 21 does not. -->
+        <surefire.jvm.args>-Dglass.platform=Headless -Dtestfx.robot=glass -Dprism.order=sw -Djava.awt.headless=true --enable-native-access=javafx.graphics,javafx.media --add-exports javafx.graphics/com.sun.glass.ui=ALL-UNNAMED --add-exports javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-opens javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-reads org.kordamp.ikonli.core=ALL-UNNAMED -Danimatorfx.audio=off</surefire.jvm.args>
     </properties>
 
     <!-- Pins every (also transitive) JavaFX artifact to the editor JavaFX version. -->
@@ -116,11 +117,6 @@
         <dependency>
             <groupId>org.testfx</groupId>
             <artifactId>testfx-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testfx</groupId>
-            <artifactId>openjfx-monocle</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

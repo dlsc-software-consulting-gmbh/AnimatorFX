@@ -18,7 +18,7 @@ Create a keyframed animation, save it as an `.afx` document, and play it inside 
 
 ## 1. Get started
 
-Launch the packaged **AnimatorFX** editor for your platform. The application image includes a Java runtime. If you are working from a source checkout, use JDK 26 and run these commands from the repository root:
+Launch the packaged **AnimatorFX** editor for your platform. The application image includes a Java runtime. If you are working from a source checkout, use JDK 27 and run these commands from the repository root:
 
 ```shell
 mvn clean install
@@ -119,13 +119,37 @@ Move the playhead and use **+** in the cue lane, then select or import a sound i
 
 Press **Space** to hear the full mix. Scrubbing the ruler previews audio layers, not cues. Cues fire when forward playback reaches them, not when you jump past them. **M** mutes the editor preview without changing the saved animation.
 
+### Add video
+
+Choose **File > Import > Video...**, or drop an **MP4/M4V** file onto the window. The original
+clip is embedded in the project (maximum **50 MiB**), placed at the playhead and selected.
+H.264/AAC is the primary supported combination; actual decoding depends on JavaFX and the
+platform's codecs. Audio-only files and failed probes add nothing.
+
+Resize and transform video on the canvas like an image. The **Video** inspector provides
+source, dimensions, clip duration, source offset, looping, mute and keyframed volume.
+**Assets > Add...** stores reusable clips; the camera button places another layer without
+duplicating the bytes. Import, placement, edits and trimming are undoable.
+
+Video has a film-style timeline bar. Drag its body to move it, its right edge to trim the end,
+or its left edge to trim while preserving picture/sound alignment. **Alt**-drag the left edge
+to change only the in-point; **Alt**-drag the body to slip the source under its current range.
+These gestures snap to frames. The **eye** controls picture visibility; the separate **speaker**
+mutes only the soundtrack. Master mute also leaves the picture moving.
+
+Seeking and paused scrubbing are silent, asynchronous and not frame-accurate. Reverse playback,
+rate zero and unsupported rates use best-effort silent seeking. Source end hides the picture
+unless looping. Video has no waveform or thumbnail strip. Saving retains the original bytes
+in format-version-3 `.afx` projects; versions 1 and 2 remain readable. Lottie export omits video
+and its soundtrack with a warning naming the layer.
+
 ## 5. Embed in JavaFX
 
 The editor and the runtime are separate. Your application needs **`animatorfx-player`**, not the editor or the importers. The player runs on Java 21 or later with JavaFX 21 or later and includes its JavaFX dependencies transitively when resolved with Maven.
 
 ### Add the dependency and the animation
 
-If you are using this checkout's `1.0-SNAPSHOT`, run `mvn clean install` with JDK 26 at the repository root first. In your JavaFX application's `pom.xml`, add:
+If you are using this checkout's `1.0-SNAPSHOT`, run `mvn clean install` with JDK 27 at the repository root first. In your JavaFX application's `pom.xml`, add:
 
 ```xml
 <dependency>

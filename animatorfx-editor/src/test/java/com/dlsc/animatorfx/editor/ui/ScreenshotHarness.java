@@ -56,7 +56,7 @@ import org.testfx.util.WaitForAsyncUtils;
  * window in both themes to PNG files, for looking at the result. The scenario is the one of the
  * pen and the advanced features: paths drawn with the pen tool, effects, a mask, trim and a
  * motion path set up in the inspector, path keyframes made in path editing with auto-key. It is
- * not picked up by a normal build. Run it without the Monocle flags:
+ * not picked up by a normal build. Run it without the headless backend flags:
  *
  * <pre>
  * mvn -pl animatorfx-editor test -Dtest=ScreenshotHarness -Dsurefire.failIfNoSpecifiedTests=false \

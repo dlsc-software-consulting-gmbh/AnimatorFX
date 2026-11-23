@@ -15,13 +15,18 @@ import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Vec2;
+import javafx.application.ColorScheme;
 import javafx.event.Event;
+import javafx.geometry.Bounds;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.HeaderBar;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -211,21 +216,122 @@ class MainWindowTest {
     }
 
     @Test
+    void theHeaderHostsDocumentControlsAbovePlayback() {
+        MainWindow window = start();
+
+        run(() -> {
+            HeaderBar header = (HeaderBar) window.getScene().lookup(".header-bar");
+            assertNotNull(header);
+            assertEquals(StageStyle.EXTENDED, window.getStage().getStyle());
+            Bounds bounds = header.localToScene(header.getLayoutBounds());
+            assertEquals(0, bounds.getMinY(), 0.1);
+            assertEquals(window.getScene().getWidth(), bounds.getWidth(), 0.1);
+            assertNotNull(header.lookup(".brand"));
+            assertNotNull(header.lookup(".document-tabs"));
+            assertNotNull(header.lookup("#theme-toggle"));
+            for (String id : List.of("zoom-out", "zoom", "zoom-in", "zoom-actual-size", "zoom-fit")) {
+                assertNotNull(header.lookup("#" + id), id);
+                assertNull(window.getToolBar().lookup("#" + id), id);
+            }
+            assertNull(window.getToolBar().lookup(".document-tabs"));
+            assertNull(window.getToolBar().lookup("#theme-toggle"));
+            assertTrue(window.getToolBar().localToScene(0, 0).getY() >= bounds.getMaxY());
+
+            ((Button) header.lookup("#new-document")).fire();
+            assertEquals(2, window.getWorkspace().getDocuments().size());
+            assertEquals(2, header.lookupAll(".document-tab").size());
+            assertNotNull(window.getToolBar().lookup("#transport-play"));
+        });
+    }
+
+    @Test
+    void headerZoomFollowsTheActiveDocument() {
+        MainWindow window = start();
+        run(() -> {
+            EditorDocument first = window.getWorkspace().getActiveDocument();
+            first.getViewState().setCanvasZoom(1.5);
+            EditorDocument second = window.getFileActions().newDocument();
+            second.getViewState().setCanvasZoom(2);
+            assertEquals(Formats.zoom(2), text(window, "#zoom"));
+
+            first.getViewState().setCanvasZoom(0.5);
+            assertEquals(Formats.zoom(2), text(window, "#zoom"));
+            window.getWorkspace().setActiveDocument(first);
+            assertEquals(Formats.zoom(0.5), text(window, "#zoom"));
+            ((Button) window.getScene().lookup("#zoom-in")).fire();
+            assertTrue(first.getViewState().getCanvasZoom() > 0.5);
+            assertEquals(2, second.getViewState().getCanvasZoom());
+        });
+    }
+
+    @Test
+    void theHeaderAndPlaybackControlsFitAtTheMinimumWindowWidthInBothThemes() {
+        MainWindow window = start();
+        run(() -> {
+            window.getStage().setWidth(window.getStage().getMinWidth());
+            window.getFileActions().newDocument();
+            window.getFileActions().newDocument();
+        });
+        WaitForAsyncUtils.waitForFxEvents();
+
+        run(() -> {
+            HeaderBar header = (HeaderBar) window.getScene().lookup(".header-bar");
+            assertNotNull(header);
+            for (Theme.Mode mode : List.of(Theme.Mode.DARK, Theme.Mode.LIGHT)) {
+                window.getTheme().setMode(mode);
+                window.getScene().getRoot().applyCss();
+                window.getScene().getRoot().layout();
+                Bounds left = header.getLeft().localToScene(header.getLeft().getLayoutBounds());
+                Bounds center = header.getCenter().localToScene(header.getCenter().getLayoutBounds());
+                Bounds right = header.getRight().localToScene(header.getRight().getLayoutBounds());
+                assertTrue(left.getMaxX() <= center.getMinX(), mode + ": tabs overlap the brand");
+                assertTrue(center.getMaxX() <= right.getMinX(), mode + ": tabs overlap header controls");
+                assertTrue(left.getMinX() >= HeaderBar.getLeftSystemInset(window.getStage()).getWidth());
+                assertTrue(right.getMaxX() <= window.getScene().getWidth()
+                        - HeaderBar.getRightSystemInset(window.getStage()).getWidth());
+
+                double previousRight = 0;
+                for (String id : List.of("transport-start", "transport-play", "transport-end", "timecode",
+                        "fps", "loop", "mute")) {
+                    Node control = window.getToolBar().lookup("#" + id);
+                    Bounds controlBounds = control.localToScene(control.getLayoutBounds());
+                    assertTrue(controlBounds.getMinX() >= previousRight, mode + ": overlapping " + id);
+                    assertTrue(controlBounds.getMaxX() <= window.getScene().getWidth(), mode + ": clipped " + id);
+                    previousRight = controlBounds.getMaxX();
+                }
+                previousRight = right.getMinX();
+                for (String id : List.of("zoom-out", "zoom", "zoom-in", "zoom-actual-size", "zoom-fit",
+                        "theme-toggle")) {
+                    Node control = header.lookup("#" + id);
+                    assertNotNull(control, id);
+                    Bounds controlBounds = control.localToScene(control.getLayoutBounds());
+                    assertTrue(controlBounds.getMinX() >= previousRight, mode + ": overlapping " + id);
+                    assertTrue(controlBounds.getMaxX() <= right.getMaxX(), mode + ": clipped " + id);
+                    previousRight = controlBounds.getMaxX();
+                }
+            }
+        });
+    }
+
+    @Test
     void switchingTheThemeTogglesTheLightStyleClassAndTheUserAgentStylesheet() {
         MainWindow window = start();
 
         run(() -> {
             window.getTheme().setMode(Theme.Mode.DARK);
             assertFalse(window.getScene().getRoot().getStyleClass().contains("light"));
+            assertEquals(ColorScheme.DARK, HeaderBar.getSystemColorScheme(window.getStage()));
             String dark = javafx.application.Application.getUserAgentStylesheet();
 
             window.getTheme().setMode(Theme.Mode.LIGHT);
             assertTrue(window.getScene().getRoot().getStyleClass().contains("light"));
             assertNotEquals(dark, javafx.application.Application.getUserAgentStylesheet());
+            assertEquals(ColorScheme.LIGHT, HeaderBar.getSystemColorScheme(window.getStage()));
 
             ((Button) window.getScene().lookup("#theme-toggle")).fire();
             assertEquals(Theme.Mode.DARK, window.getTheme().getMode());
             assertFalse(window.getScene().getRoot().getStyleClass().contains("light"));
+            assertEquals(ColorScheme.DARK, HeaderBar.getSystemColorScheme(window.getStage()));
         });
     }
 

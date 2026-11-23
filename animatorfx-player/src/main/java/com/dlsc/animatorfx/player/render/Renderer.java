@@ -8,9 +8,12 @@ import com.dlsc.animatorfx.model.Layer;
 import com.dlsc.animatorfx.model.Mask;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.TextLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.io.AnimationFile;
 import com.dlsc.animatorfx.player.Frame;
 import com.dlsc.animatorfx.player.LayerState;
+import com.dlsc.animatorfx.player.internal.video.VideoEngine;
+import com.dlsc.animatorfx.player.internal.video.MediaVideoOutput;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.shape.Rectangle;
@@ -101,8 +104,20 @@ public final class Renderer {
     private final Map<String, LayerNode> nodesById = new HashMap<>();
     private final Map<String, Group> slots = new HashMap<>();
     private List<String> structure;
+    private final VideoEngine video;
+    private final boolean ownsVideo;
 
     public Renderer() {
+        this(new VideoEngine(MediaVideoOutput::new, LOG), true);
+    }
+
+    public Renderer(VideoEngine video) {
+        this(video, false);
+    }
+
+    private Renderer(VideoEngine video, boolean ownsVideo) {
+        this.video = video;
+        this.ownsVideo = ownsVideo;
         root.setClip(bounds);
     }
 
@@ -121,6 +136,10 @@ public final class Renderer {
      * only then.
      */
     public void setDocument(AnimationFile file) {
+        if (ownsVideo) {
+            video.setDocument(file);
+            video.resume();
+        }
         if (file == null) {
             clear();
             root.getChildren().clear();
@@ -159,6 +178,9 @@ public final class Renderer {
      * frame applied before are written. Layers the frame does not know stay as they are.
      */
     public void apply(Frame frame) {
+        if (ownsVideo) {
+            video.sync(frame, false, 1, false, true, 0);
+        }
         for (int i = 0; i < nodes.size(); i++) {
             LayerNode node = nodes.get(i);
             LayerState state = frame.get(node.id);
@@ -189,10 +211,19 @@ public final class Renderer {
     }
 
     private void clear() {
+        nodes.forEach(LayerNode::dispose);
         nodes.clear();
         masks.clear();
         nodesById.clear();
         slots.clear();
+    }
+
+    /** Releases node bindings and any media session owned by this renderer. */
+    public void dispose() {
+        clear();
+        root.getChildren().clear();
+        structure = null;
+        if (ownsVideo) video.dispose();
     }
 
     /** Lists everything that decides which nodes exist and how they nest. */
@@ -205,6 +236,7 @@ public final class Renderer {
             out.add(mask == null ? "" : mask.layerId());
             switch (layer) {
                 case ImageLayer image -> out.add(image.assetId());
+                case VideoLayer movie -> out.add(movie.assetId());
                 case TextLayer text -> out.add(text.fontAssetId() == null ? "" : text.fontAssetId());
                 case SlotLayer slot -> out.add(slot.slotName());
                 case GroupLayer group -> {
@@ -264,7 +296,7 @@ public final class Renderer {
 
     private LayerNode build(Layer layer, Map<String, Layer> siblings, boolean geometryOnly, boolean clip,
                             Set<String> building) {
-        LayerNode node = LayerNode.create(layer, geometryOnly, clip);
+        LayerNode node = LayerNode.create(layer, geometryOnly, clip, video);
         nodes.add(node);
         nodesById.putIfAbsent(layer.id(), node);
         building.add(layer.id());

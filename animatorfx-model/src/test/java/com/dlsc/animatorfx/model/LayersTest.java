@@ -274,7 +274,7 @@ class LayersTest {
     @Test
     void animationCues() {
         Animation created = Animation.create("New", 640, 480, 3);
-        assertEquals(2, created.formatVersion());
+        assertEquals(Animation.CURRENT_FORMAT, created.formatVersion());
         assertTrue(created.cues().isEmpty());
         assertTrue(new Animation(2, "New", 640, 480, 60, 3, Rgba.TRANSPARENT, List.of(), List.of(), List.of())
                 .cues().isEmpty());

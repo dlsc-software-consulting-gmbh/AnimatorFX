@@ -25,6 +25,7 @@ import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Trim;
 import com.dlsc.animatorfx.model.Vec2;
+import com.dlsc.animatorfx.model.VideoLayer;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -108,6 +109,7 @@ final class AnimationJsonWriter {
             case GroupLayer g -> "group";
             case SlotLayer s -> "slot";
             case AudioLayer a -> "audio";
+            case VideoLayer v -> "video";
         });
         base(json, layer.base(), duration);
         switch (layer) {
@@ -138,6 +140,15 @@ final class AnimationJsonWriter {
                 json.put("asset", image.assetId());
                 json.put("width", image.width());
                 json.put("height", image.height());
+            }
+            case VideoLayer video -> {
+                json.put("asset", video.assetId());
+                json.put("width", video.width());
+                json.put("height", video.height());
+                put(json, "clipOffset", video.clipOffset(), 0.0);
+                put(json, "volume", video.volume(), Defaults.VOLUME, AnimationJsonWriter::number);
+                put(json, "loop", video.loop(), false);
+                put(json, "muted", video.muted(), false);
             }
             case GroupLayer group -> json.put("children", list(group.children(), child -> layer(child, duration, depth + 1)));
             case SlotLayer slot -> {

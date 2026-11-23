@@ -99,7 +99,7 @@ public final class CanvasView extends Region {
     private final Overlay overlay;
     private final Pane editorLayer = new Pane();
     private final LayerGeometry geometry = new LayerGeometry(this);
-    private final Playback playback = new Playback(view);
+    private final Playback playback = new Playback(view, this::notice);
     private final CanvasActions actions;
     private final Map<ToolKind, Tool> tools = new EnumMap<>(ToolKind.class);
     private final Tool idleTool = new Tool() {

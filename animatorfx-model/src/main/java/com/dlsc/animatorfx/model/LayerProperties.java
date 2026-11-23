@@ -121,6 +121,7 @@ public final class LayerProperties {
             }
             case ImageLayer image -> {
             }
+            case VideoLayer video -> out.number("volume", "Volume", video.volume(), video::withVolume);
             case GroupLayer group -> {
             }
             case SlotLayer slot -> {

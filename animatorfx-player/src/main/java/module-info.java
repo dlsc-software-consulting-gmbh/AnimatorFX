@@ -11,4 +11,5 @@ module com.dlsc.animatorfx.player {
     exports com.dlsc.animatorfx.player.render to com.dlsc.animatorfx.editor;
     // the audio output is no API either: the editor replaces it in its tests and observes scrubbing
     exports com.dlsc.animatorfx.player.internal.audio to com.dlsc.animatorfx.editor;
+    exports com.dlsc.animatorfx.player.internal.video to com.dlsc.animatorfx.editor;
 }

@@ -19,6 +19,7 @@ import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Trim;
 import com.dlsc.animatorfx.model.Vec2;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.player.LayerState.EffectState;
 
 import java.lang.ref.WeakReference;
@@ -170,7 +171,8 @@ public final class Evaluator {
             this.stroke = stroke;
             this.trim = trim;
             this.fontSize = fontSize;
-            volume = layer instanceof AudioLayer audio ? audio.volume() : null;
+            volume = layer instanceof AudioLayer audio ? audio.volume()
+                    : layer instanceof VideoLayer video ? video.volume() : null;
             balance = layer instanceof AudioLayer audio ? audio.balance() : null;
 
             Transform transform = base.transform();
@@ -194,7 +196,7 @@ public final class Evaluator {
                     || base.opacity().isAnimated() || (fill != null && fill.isAnimated())
                     || (stroke != null && animated(stroke.paint(), stroke.width(), stroke.dashOffset()))
                     || (fontSize != null && fontSize.isAnimated())
-                    || (volume != null && animated(volume, balance));
+                    || (volume != null && volume.isAnimated()) || (balance != null && balance.isAnimated());
             shown = anythingAnimated ? null : compute(0, true);
             hidden = anythingAnimated ? null : shown.withVisible(false);
         }

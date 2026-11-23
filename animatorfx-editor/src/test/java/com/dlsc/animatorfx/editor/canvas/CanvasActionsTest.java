@@ -24,6 +24,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.input.ScrollEvent;
 import org.junit.jupiter.api.Test;
 import org.testfx.util.WaitForAsyncUtils;
@@ -332,6 +334,25 @@ class CanvasActionsTest extends CanvasTestBase {
         assertEquals(1, canvas.getZoom());
         // the middle of the canvas stayed where it was: the artboard is still centred
         assertEquals(canvas.getWidth() / 2, view(400, 300).x(), 1);
+    }
+
+    @Test
+    void headerZoomButtonsChangeTheCanvasZoom() {
+        run(() -> ((Button) window.getScene().lookup("#zoom-in")).fire());
+        assertEquals(1.5, canvas.getZoom());
+        run(() -> ((Button) window.getScene().lookup("#zoom-out")).fire());
+        assertEquals(1, canvas.getZoom());
+        run(() -> ((Button) window.getScene().lookup("#zoom-fit")).fire());
+        assertTrue(view(0, 0).x() >= 40);
+        assertTrue(view(800, 600).x() <= canvas.getWidth() - 40);
+        run(() -> ((Button) window.getScene().lookup("#zoom-actual-size")).fire());
+        assertEquals(1, canvas.getZoom());
+    }
+
+    @Test
+    void zoomInMenuUsesShortcutPlus() {
+        assertEquals(new KeyCodeCombination(KeyCode.PLUS, KeyCombination.SHORTCUT_DOWN),
+                window.menuItem("menu-view-zoom-in").getAccelerator());
     }
 
     @Test

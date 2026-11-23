@@ -140,8 +140,7 @@ public class AnimationView extends Control {
             windowListener.changed(null, before == null ? null : before.getWindow(),
                     now == null ? null : now.getWindow());
             if (now == null && !player.hasInPlaceBindings()) {
-                // nothing sounds outside a scene; the sound comes back with the next frame that needs it
-                player.releaseAudio();
+                player.releaseMedia();
             }
         });
         player.animationProperty().addListener(observable -> {

@@ -4,6 +4,7 @@ import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Effect;
 import com.dlsc.animatorfx.model.Geometry;
@@ -282,6 +283,24 @@ class LottieExporterTest {
         assertEquals(1.5, read.base().outPoint(), EPS);
         assertEquals(0.25, read.clipOffset(), EPS);
         assertEquals(0.8, read.volume().at(0), EPS);
+    }
+
+    @Test
+    void videosAreOmittedWithNamedWarningsWhileSupportedNeighborsStillExport() throws IOException {
+        VideoLayer video = new VideoLayer(LayerBase.create("Trailer", 2), "video",
+                320, 180, 0, Animatable.of(1.0), false, false);
+        Animation animation = document(video, rect("Box", 40, 20, Rgba.BLACK))
+                .withAssets(List.of(new Asset("video", Asset.Kind.VIDEO, "assets/clip.mp4", "Clip")));
+        AnimationFile file = new AnimationFile(animation, Map.of("video", new byte[]{1, 2, 3, 4}));
+        LottieExport export = LottieExporter.convert(file);
+        assertEquals(List.of("Box"), export.animation().layers().stream().map(layer -> layer.name()).toList());
+        assertTrue(export.animation().assets() == null || export.animation().assets().isEmpty());
+        assertTrue(export.warnings().stream().anyMatch(line -> line.contains("Trailer") && line.contains("omitted")));
+        ByteArrayOutputStream json = new ByteArrayOutputStream();
+        assertEquals(export.warnings(), LottieExporter.writeJson(file, json));
+        assertFalse(json.toString(java.nio.charset.StandardCharsets.UTF_8).contains("AQIDBA=="));
+        ByteArrayOutputStream archive = new ByteArrayOutputStream();
+        assertEquals(export.warnings(), LottieExporter.writeDotLottie(file, archive));
     }
 
     @Test

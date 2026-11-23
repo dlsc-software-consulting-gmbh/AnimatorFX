@@ -8,15 +8,19 @@ import com.dlsc.animatorfx.model.PathData;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.Stroke;
 import com.dlsc.animatorfx.model.TextLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.player.LayerState;
 import com.dlsc.animatorfx.player.internal.EffectChain;
+import com.dlsc.animatorfx.player.internal.video.VideoEngine;
 import javafx.geometry.VPos;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.image.ImageView;
+import javafx.scene.media.MediaView;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Path;
 import javafx.scene.shape.Shape;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.StrokeLineCap;
 import javafx.scene.shape.StrokeLineJoin;
 import javafx.scene.text.Font;
@@ -57,12 +61,13 @@ abstract class LayerNode {
         node.getTransforms().add(affine);
     }
 
-    static LayerNode create(Layer layer, boolean geometryOnly, boolean clip) {
+    static LayerNode create(Layer layer, boolean geometryOnly, boolean clip, VideoEngine video) {
         return switch (layer) {
             case ShapeLayer shape -> new ShapeNode(shape.id(), geometryOnly, clip);
             case TextLayer text -> new TextNode(text.id(), geometryOnly, clip);
             case ImageLayer image -> new ImageNode(image.id(), geometryOnly, clip);
             case AudioLayer audio -> new AudioNode(audio.id(), geometryOnly, clip);
+            case VideoLayer movie -> new VideoNode(movie.id(), geometryOnly, clip, video);
             default -> new ContainerNode(layer.id(), geometryOnly, clip);
         };
     }
@@ -116,6 +121,9 @@ abstract class LayerNode {
         return true;
     }
 
+    void dispose() {
+    }
+
     abstract void writeStatics(Layer layer, Assets assets);
 
     /**
@@ -148,6 +156,48 @@ abstract class LayerNode {
         }
         if (old == null || old.dashOffset() != state.dashOffset()) {
             shape.setStrokeDashOffset(state.dashOffset());
+        }
+    }
+
+    private static final class VideoNode extends LayerNode {
+        private final Rectangle rectangle = new Rectangle();
+        private final MediaView view;
+
+        VideoNode(String id, boolean geometryOnly, boolean clip, VideoEngine video) {
+            super(id, new Group(), geometryOnly, clip);
+            rectangle.setFill(geometryOnly ? Color.BLACK : Color.TRANSPARENT);
+            ((Group) node).getChildren().add(rectangle);
+            if (geometryOnly) {
+                view = null;
+            } else {
+                view = new MediaView();
+                view.setPreserveRatio(false);
+                view.mediaPlayerProperty().bind(video.playerProperty(id));
+                ((Group) node).getChildren().add(view);
+            }
+        }
+
+        @Override
+        void writeStatics(Layer layer, Assets assets) {
+            VideoLayer video = (VideoLayer) layer;
+            rectangle.setWidth(video.width());
+            rectangle.setHeight(video.height());
+            if (view != null) {
+                view.setFitWidth(video.width());
+                view.setFitHeight(video.height());
+            }
+        }
+
+        @Override
+        void writeValues(LayerState old, LayerState state) {
+        }
+
+        @Override
+        void dispose() {
+            if (view != null) {
+                view.mediaPlayerProperty().unbind();
+                view.setMediaPlayer(null);
+            }
         }
     }
 

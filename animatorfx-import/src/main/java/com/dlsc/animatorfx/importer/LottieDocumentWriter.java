@@ -4,6 +4,7 @@ import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Effect;
 import com.dlsc.animatorfx.model.Geometries;
@@ -201,6 +202,7 @@ final class LottieDocumentWriter {
                     .put("shapes", shapes(shape));
             case TextLayer text -> text(text, context, out);
             case ImageLayer image -> image(image, context, out);
+            case VideoLayer video -> warnings.add("Video layer '" + video.name() + "' and its sound were omitted");
             case AudioLayer audio -> {
                 if (!context.asMatte()) {
                     audio(audio, context, out);

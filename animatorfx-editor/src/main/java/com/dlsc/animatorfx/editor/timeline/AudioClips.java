@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Where the sound of an audio layer lies under its bar: the sound position at the in-point is
+ * Shared clip timing for audio and video. The source position at the in-point is
  * the clip offset, the sound runs at the speed of the timeline, stops at its end or starts over
  * when the layer loops. Also the arithmetic of the bar gestures. Pure: times in seconds.
  */

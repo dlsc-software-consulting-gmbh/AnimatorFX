@@ -4,7 +4,7 @@ package com.dlsc.animatorfx.model;
  * A layer of an animation. Parenting is expressed by nesting inside a {@link GroupLayer}.
  */
 public sealed interface Layer permits ShapeLayer, TextLayer, ImageLayer, GroupLayer, SlotLayer,
-        AudioLayer {
+        AudioLayer, VideoLayer {
 
     LayerBase base();
 
