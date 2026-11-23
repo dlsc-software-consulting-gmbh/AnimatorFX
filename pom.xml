@@ -51,9 +51,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Runtime libraries (model, player) target Java 21 / JavaFX 21; the importer and editor use Java 26 / JavaFX 25. -->
+        <!-- Runtime libraries (model, player) target Java 21; the importer and editor use Java 27. -->
         <runtime.java.release>21</runtime.java.release>
-        <editor.java.release>26</editor.java.release>
+        <editor.java.release>27</editor.java.release>
         <javafx.runtime.version>27.0.1</javafx.runtime.version>
         <javafx.editor.version>27.0.1</javafx.editor.version>
 

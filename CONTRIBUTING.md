@@ -16,7 +16,7 @@ Discuss substantial features or file-format changes in an issue before implement
 
 ## Building
 
-Install JDK 26 and set `JAVA_HOME` to it. The Maven wrapper downloads the pinned Maven distribution;
+Install JDK 27 and set `JAVA_HOME` to it. The Maven wrapper downloads the pinned Maven distribution;
 no separate Maven installation is needed.
 
 ```bash
@@ -49,7 +49,7 @@ For a local build without an audio device, use `-DexcludedGroups=native-audio` a
 - JavaFX tests run headless through TestFX/Monocle. Keep tests silent and use temporary session
   directories; never access a user's real editor configuration.
 - Keep `animatorfx-model` independent of JavaFX. Model and player target Java 21; tooling targets
-  Java 26. The sample app must remain independent of the tooling.
+  Java 27. The sample app must remain independent of the tooling.
 - Keep model records immutable. Editor document edits go through commands and remain undoable.
 - JavaFX property accessors are `final`; property Javadoc belongs on `xxxProperty()` only.
 - Use the looked-up colors in `editor.css`, and check UI changes in both themes.

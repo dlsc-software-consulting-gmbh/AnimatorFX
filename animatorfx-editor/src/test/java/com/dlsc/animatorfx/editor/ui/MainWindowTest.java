@@ -53,6 +53,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class MainWindowTest {
 
+    @Test
+    void theWindowHasAReadableApplicationIcon() {
+        MainWindow window = start();
+        run(() -> {
+            assertFalse(window.getStage().getIcons().isEmpty());
+            var icon = window.getStage().getIcons().getFirst();
+            assertFalse(icon.isError());
+            assertTrue(icon.getWidth() > 0 && icon.getHeight() > 0);
+        });
+    }
+
     /** Answers the dialogs from queues, at once; an empty queue means "cancelled". */
     private static final class StubDialogs implements Dialogs {
 

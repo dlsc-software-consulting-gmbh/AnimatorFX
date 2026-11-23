@@ -217,7 +217,7 @@
                                     <target>
                                         <delete dir="${project.build.directory}/jdeploy"/>
                                         <mkdir dir="${project.build.directory}/jdeploy"/>
-                                        <copy file="${project.basedir}/src/package/AnimatorFX.png"
+                                        <copy file="${maven.multiModuleProjectDirectory}/icon.png"
                                               tofile="${project.build.directory}/jdeploy/icon.png"/>
                                         <copy file="${maven.multiModuleProjectDirectory}/LICENSE"
                                               todir="${project.build.directory}/jdeploy"/>

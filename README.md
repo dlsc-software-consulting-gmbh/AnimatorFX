@@ -97,9 +97,9 @@ artifacts it uses (`javafx-controls`, `javafx-media` and what those need) transi
 | | Java | JavaFX | Other dependencies |
 |---|---|---|---|
 | Runtime (`model`, `player`) | 21 or later | 21 or later: `javafx.base`, `javafx.graphics`, `javafx.controls`, `javafx.media` | none |
-| Editor and importers | JDK 26 | 25 | AtlantaFX 3.0.0, Ikonli 12.4.0, GemsFX 4.16.0 (editor only) |
+| Editor and importers | JDK 27 | 27.0.1 | AtlantaFX 3.0.0, Ikonli 12.4.0, GemsFX 4.16.0 (editor only) |
 
-Building the whole project needs **JDK 26**; the included Maven wrapper pins Maven 3.9.11.
+Building the whole project needs **JDK 27**; the included Maven wrapper pins Maven 3.9.11.
 Use `./mvnw` (or `mvnw.cmd` on Windows) instead of `mvn` in the commands below if Maven is not installed.
 The runtime modules are compiled with
 `--release 21` against JavaFX 21.0.13.
@@ -113,7 +113,7 @@ see [Known limitations](#known-limitations).
 
 ## Quick start
 
-All commands run from the repository root with a JDK 26 as `JAVA_HOME`.
+All commands run from the repository root with a JDK 27 as `JAVA_HOME`.
 
 ```bash
 # build everything and run all tests (headless)
@@ -212,9 +212,10 @@ animatorfx-editor/target/dist/AnimatorFX.app/Contents/MacOS/AnimatorFX --diagnos
 
 The image is not signed or notarized, there is no installer, and `.afx` files are not associated
 with the application. Only the macOS (Apple Silicon) image has been built and started; on Windows
-and Linux the profile uses the default icon and has not been tried. The icon is drawn by
-`animatorfx-editor/src/package/IconGenerator.java`; `make-icons.sh` next to it rebuilds the PNG,
-the `.icns` and the small copy that the About dialog shows.
+and Linux the profile uses the default icon and has not been tried. jDeploy uses the repository
+root's `icon.png` for its installers and applications on all platforms.
+`animatorfx-editor/src/package/make-icons.sh` rebuilds the macOS `.icns` and the small copy that
+the About dialog shows from that same master artwork.
 
 ## Embedding animations
 
@@ -843,7 +844,7 @@ Gaps in what is there:
 animatorfx-model/      document records, interpolation, easing, .afx I/O (no JavaFX)
 animatorfx-player/     Evaluator, Renderer, AnimationPlayer, AnimationView, slot binding
 animatorfx-import/     SvgImporter, LottieImporter, FxmlImporter, LottieExporter
-animatorfx-editor/     the editor; src/package holds the application icon and its generator
+animatorfx-editor/     the editor; src/package holds native icon assets and their conversion script
 samples/
   animations/          the sample .afx files
   animatorfx-sample-app/  application that embeds the runtime only; generator in its test scope
@@ -863,7 +864,7 @@ mvn -pl animatorfx-editor test -Dtest=MainWindowTest   # one test class
 - Tests are JUnit Jupiter (JUnit 6, through the `junit-bom`). Everything that needs JavaFX runs **headless** on the Monocle platform with
   TestFX; no window appears and no display is needed. The flags are in the parent pom
   (`javafx.headless.jvm.args`).
-- The build needs JDK 26 as `JAVA_HOME`, also for the Java 21 modules (they are compiled with
+- The build needs JDK 27 as `JAVA_HOME`, also for the Java 21 modules (they are compiled with
   `--release 21`). `model` and `player` are checked by Maven Enforcer to have no third-party
   runtime dependencies, the sample application to have no tooling dependencies (editor, importer,
   AtlantaFX, Ikonli, GemsFX).
