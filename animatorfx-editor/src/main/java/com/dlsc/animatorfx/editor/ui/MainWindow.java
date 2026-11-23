@@ -9,6 +9,7 @@ import com.dlsc.animatorfx.editor.session.RecoveryStore;
 import com.dlsc.animatorfx.editor.session.SessionState.Layout;
 import com.dlsc.animatorfx.editor.session.SessionStore;
 import com.dlsc.animatorfx.editor.timeline.TimelineView;
+import javafx.application.ColorScheme;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
@@ -28,9 +29,11 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HeaderBar;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import javafx.stage.WindowEvent;
 
 import java.io.File;
@@ -38,7 +41,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The main window in the motion-tool layout: toolbar with the document tabs at the top, tool rail
+ * The main window in the motion-tool layout: window header with document tabs, playback toolbar, tool rail
  * at the left, canvas in the centre, tabbed side panel at the right, timeline at the bottom and
  * the status bar below it. Above all of it lies the layer in which the dialogs show, inside
  * the window.
@@ -99,13 +102,20 @@ public final class MainWindow {
      */
     public MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs) {
         this.stage = stage;
-        stage.getIcons().add(new Image(MainWindow.class.getResource(
-                "/com/dlsc/animatorfx/editor/app-icon.png").toExternalForm()));
+        stage.initStyle(StageStyle.EXTENDED);
+        Image icon = new Image(MainWindow.class.getResource(
+                "/com/dlsc/animatorfx/editor/app-icon.png").toExternalForm());
+        stage.getIcons().add(icon);
         this.dialogs = dialogs != null ? dialogs : new SystemDialogs(dialogLayer);
         fileActions = new FileActions(workspace, this.dialogs, noticeBar, () -> stage);
         importActions = new ImportActions(workspace, noticeBar, this.dialogs, () -> stage);
         exportActions = new ExportActions(workspace, noticeBar, this.dialogs, () -> stage);
-        toolBar = new ToolBarView(new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme);
+        HeaderBarView header = new HeaderBarView(
+                new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme, icon);
+        HeaderBar.systemColorSchemeProperty(stage).bind(Bindings.when(theme.darkProperty())
+                .then(ColorScheme.DARK).otherwise(ColorScheme.LIGHT));
+        HeaderBar.systemButtonHeightProperty(stage).bind(header.heightProperty());
+        toolBar = new ToolBarView();
 
         canvasSlot.setMinSize(0, 0);
         sideSlot.setMinWidth(220);
@@ -129,7 +139,7 @@ public final class MainWindow {
         }
         BorderPane content = new BorderPane(mainSplit);
         content.getStyleClass().add("main-window");
-        content.setTop(new VBox(menuBar, toolBar, noticeBar));
+        content.setTop(new VBox(header, menuBar, toolBar, noticeBar));
         content.setBottom(statusBar);
         // the dialog layer covers everything, an in-window menu bar included
         StackPane root = new StackPane(content, dialogLayer.getPane());

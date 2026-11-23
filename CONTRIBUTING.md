@@ -27,7 +27,7 @@ no separate Maven installation is needed.
 
 On Windows, use `mvnw.cmd` in place of `./mvnw`. On Ubuntu 24.04, install `libgtk-3-0t64`
 and `libasound2t64` for JavaFX. CI also installs `xvfb` and `xauth` and runs the portable test
-suite through `xvfb-run`, providing a virtual display alongside Monocle's headless mode.
+suite through `xvfb-run`, providing a virtual display alongside the headless test backends.
 All workflows run on `ubuntu-latest`. CI verifies the portable jDeploy payload; releases distribute
 the editor through jDeploy rather than building platform-specific application images or archives.
 
@@ -46,8 +46,9 @@ For a local build without an audio device, use `-DexcludedGroups=native-audio` a
 
 - Branch from the repository's current default branch. Keep changes focused and explain their purpose.
 - Add regression tests for changed behavior; run the affected tests before submitting.
-- JavaFX tests run headless through TestFX/Monocle. Keep tests silent and use temporary session
-  directories; never access a user's real editor configuration.
+- Editor JavaFX tests use TestFX with JavaFX's bundled Headless backend; the other JavaFX tests
+  use TestFX/Monocle. Keep tests silent and use temporary session directories; never access a
+  user's real editor configuration.
 - Keep `animatorfx-model` independent of JavaFX. Model and player target Java 21; tooling targets
   Java 27. The sample app must remain independent of the tooling.
 - Keep model records immutable. Editor document edits go through commands and remain undoable.

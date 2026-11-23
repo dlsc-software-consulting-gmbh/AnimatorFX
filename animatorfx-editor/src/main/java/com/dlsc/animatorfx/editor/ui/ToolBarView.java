@@ -18,8 +18,7 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.material2.Material2MZ;
 
 /**
- * The top bar: document tabs, transport, timecode, frame rate, loop toggle, mute toggle, zoom and
- * theme switch.
+ * The playback bar: transport, timecode, frame rate, loop toggle, mute toggle and canvas zoom.
  *
  * <p>The to-start and to-end buttons move the playhead of the document. Playback itself is not
  * part of the toolbar: whoever owns the player sets {@link #onPlayPauseProperty()} and keeps
@@ -37,15 +36,8 @@ public final class ToolBarView extends HBox {
     private final Label frameRate = pill(new Label(), "fps");
     private final Label zoom = pill(new Label(), "zoom");
 
-    public ToolBarView(DocumentTabs tabs, Theme theme) {
+    public ToolBarView() {
         getStyleClass().add("toolbar");
-
-        Label brand = new Label("AnimatorFX");
-        brand.getStyleClass().add("brand");
-        brand.setMinWidth(USE_PREF_SIZE);
-        HBox left = new HBox(brand, tabs);
-        left.getStyleClass().add("toolbar-group");
-        HBox.setHgrow(tabs, Priority.ALWAYS);
 
         Button toStart = iconButton("transport-start", Material2MZ.SKIP_PREVIOUS, "Go to start");
         toStart.setOnAction(e -> seek(0));
@@ -90,15 +82,10 @@ public final class ToolBarView extends HBox {
         HBox centre = new HBox(transport, timecode, frameRate, loopButton, muteButton);
         centre.getStyleClass().add("toolbar-group");
 
-        FontIcon themeIcon = new FontIcon();
-        themeIcon.iconCodeProperty().bind(Bindings.when(theme.darkProperty())
-                .then((Ikon) Material2MZ.NIGHTS_STAY).otherwise(Material2MZ.WB_SUNNY));
-        Button themeToggle = iconButton("theme-toggle", themeIcon, "Switch between dark and light");
-        themeToggle.getStyleClass().add("pill");
-        themeToggle.setOnAction(e -> theme.toggle());
         zoom.setTooltip(new Tooltip("Canvas zoom"));
 
-        HBox right = new HBox(zoom, themeToggle);
+        HBox left = new HBox();
+        HBox right = new HBox(zoom);
         right.getStyleClass().add("toolbar-group");
         right.setAlignment(Pos.CENTER_RIGHT);
 

@@ -30,8 +30,8 @@ class HeadlessToolkitTest {
     }
 
     @Test
-    void showsAStageWithAtlantaFxAndIkonliUnderMonocle() {
-        assertEquals("Monocle", System.getProperty("glass.platform"));
+    void showsAStageWithAtlantaFxAndIkonliUnderHeadlessGlass() {
+        assertEquals("Headless", System.getProperty("glass.platform"));
         assertTrue(button.getScene().getWindow().isShowing());
         assertTrue(button.getWidth() > 0);
     }

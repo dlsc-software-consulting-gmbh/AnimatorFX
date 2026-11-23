@@ -117,7 +117,22 @@
     -fx-font-size: 11px;
 }
 
-/* ---------------------------------------------------------------- toolbar */
+/* -------------------------------------------------------- header / toolbar */
+
+.header-bar {
+    -fx-background-color: -afx-panel;
+    -fx-border-color: -afx-line;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 0 12;
+    -fx-pref-height: 44;
+}
+
+.header-tabs,
+.header-tabs > .viewport {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
 
 .toolbar {
     -fx-background-color: -afx-panel;
@@ -126,9 +141,9 @@
     -fx-padding: 0 10 0 12;
     -fx-spacing: 12;
     -fx-alignment: center-left;
-    -fx-min-height: 40;
-    -fx-pref-height: 40;
-    -fx-max-height: 40;
+    -fx-min-height: 36;
+    -fx-pref-height: 36;
+    -fx-max-height: 36;
 }
 
 .toolbar-group {
