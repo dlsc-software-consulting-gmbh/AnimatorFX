@@ -23,6 +23,7 @@ public enum ToolKind {
     PEN("Pen", KeyCode.P, Material2AL.GESTURE),
     TEXT("Text", KeyCode.T, Material2MZ.TITLE),
     IMAGE("Image", KeyCode.I, Material2OutlinedAL.IMAGE),
+    VIDEO("Video", null, Material2MZ.MOVIE),
     SLOT("Slot", KeyCode.K, Material2OutlinedMZ.WIDGETS);
 
     private final String displayName;
@@ -40,7 +41,7 @@ public enum ToolKind {
     }
 
     /**
-     * The key that selects the tool when pressed without modifiers.
+     * The key that selects the tool when pressed without modifiers, or null if none is assigned.
      */
     public KeyCode shortcut() {
         return shortcut;
@@ -52,7 +53,7 @@ public enum ToolKind {
 
     public static Optional<ToolKind> forShortcut(KeyCode code) {
         for (ToolKind kind : values()) {
-            if (kind.shortcut == code) {
+            if (kind.shortcut != null && kind.shortcut == code) {
                 return Optional.of(kind);
             }
         }

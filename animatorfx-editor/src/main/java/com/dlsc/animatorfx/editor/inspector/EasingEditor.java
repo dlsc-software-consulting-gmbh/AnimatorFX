@@ -7,6 +7,7 @@ import com.dlsc.animatorfx.editor.inspector.fields.Combos;
 import com.dlsc.animatorfx.editor.inspector.fields.TextValueField;
 import com.dlsc.animatorfx.editor.ui.Palette;
 import com.dlsc.animatorfx.editor.ui.Palette.Tone;
+import com.dlsc.animatorfx.editor.ui.TiledCanvas;
 import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Easing;
@@ -18,7 +19,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javafx.geometry.VPos;
-import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -52,7 +52,7 @@ public final class EasingEditor extends VBox {
     private static final int SAMPLES = 64;
 
     private final Palette palette = new Palette();
-    private final Canvas canvas = new Canvas();
+    private final TiledCanvas canvas = new TiledCanvas();
     private final Label fontProbe = new Label();
     private final Region curve = new Region() {
         {
@@ -256,10 +256,10 @@ public final class EasingEditor extends VBox {
     private void draw() {
         double width = curve.getWidth();
         double height = curve.getHeight();
-        canvas.setWidth(width);
-        canvas.setHeight(height);
-        GraphicsContext g = canvas.getGraphicsContext2D();
-        g.clearRect(0, 0, width, height);
+        canvas.draw(width, height, g -> draw(g, width, height));
+    }
+
+    private void draw(GraphicsContext g, double width, double height) {
         if (width <= 0 || height <= 0) {
             return;
         }

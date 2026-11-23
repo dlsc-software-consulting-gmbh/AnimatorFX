@@ -4,6 +4,7 @@ import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.editor.ui.Palette;
 import com.dlsc.animatorfx.editor.ui.Palette.Tone;
+import com.dlsc.animatorfx.editor.ui.TiledCanvas;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.SoundCue;
 import java.util.ArrayList;
@@ -15,7 +16,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javafx.geometry.VPos;
-import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
@@ -48,7 +48,7 @@ public final class CueLane extends Region {
     }
 
     private final TimelineView timeline;
-    private final Canvas canvas = new Canvas();
+    private final TiledCanvas canvas = new TiledCanvas();
     private final Label fontProbe = new Label();
     private final Text measure = new Text();
     private final Map<String, Double> widths = new HashMap<>();
@@ -243,10 +243,10 @@ public final class CueLane extends Region {
     void draw() {
         double width = getWidth();
         double height = getHeight();
-        canvas.setWidth(width);
-        canvas.setHeight(height);
-        GraphicsContext g = canvas.getGraphicsContext2D();
-        g.clearRect(0, 0, width, height);
+        canvas.draw(width, height, g -> draw(g, width, height));
+    }
+
+    private void draw(GraphicsContext g, double width, double height) {
         Palette palette = timeline.getPalette();
         g.setFill(palette.get(Tone.PANEL_ALT));
         g.fillRect(0, 0, width, height);

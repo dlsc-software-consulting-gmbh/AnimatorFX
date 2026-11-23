@@ -6,9 +6,12 @@ import com.dlsc.animatorfx.editor.video.VideoInfo;
 import com.dlsc.animatorfx.editor.inspector.AssetsView;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.VideoLayer;
+import javafx.scene.control.ToggleButton;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testfx.util.WaitForAsyncUtils;
 
 import java.io.RandomAccessFile;
@@ -40,14 +43,19 @@ class VideoImportUiTest extends EditorUiTest {
         layout();
     }
 
-    @Test
-    void menuImportEmbedsAndSelectsTheClipAsOneUndoStep() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"menu", "toolbar"})
+    void importEmbedsAndSelectsTheClipAsOneUndoStep(String entryPoint) throws Exception {
         Path source = dir.resolve("Title clip.mp4");
         Files.write(source, new byte[]{1, 2, 3, 4});
         run(() -> {
             doc.setPlayhead(1);
             window.getImportActions().setVideoPicker(owner -> List.of(source));
-            window.menuItem("menu-file-import-video").fire();
+            if (entryPoint.equals("menu")) {
+                window.menuItem("menu-file-import-video").fire();
+            } else {
+                clickVideoTool();
+            }
         });
         settle();
         assertEquals(1, doc.getAnimation().assets().size());
@@ -59,12 +67,32 @@ class VideoImportUiTest extends EditorUiTest {
         assertEquals(1.75, video.base().outPoint());
         assertEquals(320, video.width());
         assertEquals(List.of(video.id()), List.copyOf(doc.getSelection().layerIds()));
+        assertEquals(ToolKind.SELECT, window.getToolRail().getActiveTool());
         assertArrayEquals(new byte[]{1, 2, 3, 4}, doc.getFileContent().assets().get(asset.id()));
         run(doc::undo);
         assertTrue(doc.getAnimation().assets().isEmpty());
         assertTrue(doc.getAnimation().layers().isEmpty());
         run(doc::redo);
         assertEquals(1, doc.getAnimation().layers().size());
+    }
+
+    @Test
+    void cancellingTheVideoToolReturnsToSelectWithoutChangingTheDocument() {
+        run(() -> {
+            window.getImportActions().setVideoPicker(owner -> List.of());
+            clickVideoTool();
+        });
+        WaitForAsyncUtils.waitForFxEvents();
+        assertEquals(ToolKind.SELECT, window.getToolRail().getActiveTool());
+        assertTrue(doc.getAnimation().layers().isEmpty());
+        assertTrue(doc.getAnimation().assets().isEmpty());
+        assertFalse(doc.isCanUndo());
+    }
+
+    private void clickVideoTool() {
+        ToggleButton button = (ToggleButton) window.getScene().lookup("#tool-video");
+        assertNotNull(button, "Video import must be available in the left tool rail");
+        button.fire();
     }
 
     @Test
