@@ -462,6 +462,11 @@ text layers and groups, edit supported properties and text, and add or update ke
 are validated and applied as one undoable edit; a response is discarded if the project changes
 while the request is in progress. Locked layers and groups are not modified.
 
+After an AI edit, expand the affected layers in Chat to adjust supported values directly, including
+drop-shadow color, radius, offsets and spread. Adjustments apply immediately as separate undoable
+changes. Controls follow the current project and become unavailable when their target is locked,
+removed or no longer safely identifiable. Complex paths remain editable on the canvas.
+
 The project structure (including layer names and text), selection, playhead and recent conversation
 are sent to the selected provider and may incur charges. Embedded media and local asset paths are
 not sent. Conversations are kept in memory per open document and can be cleared in *Chat*.

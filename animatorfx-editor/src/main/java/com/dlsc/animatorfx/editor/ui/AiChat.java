@@ -14,6 +14,7 @@ import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
@@ -41,7 +42,10 @@ final class AiChat extends VBox {
     private final Request request;
     private final Consumer<String> activity;
     private final Map<EditorDocument, List<AiEdits.Message>> conversations = new IdentityHashMap<>();
+    private final Map<EditorDocument, Map<AiEdits.Message, AiFeedback>> feedback = new IdentityHashMap<>();
     private final TextArea transcript = new TextArea();
+    private final VBox feedbackCards = new VBox(8);
+    private final ScrollPane feedbackScroll = new ScrollPane(feedbackCards);
     private final TextArea input = new TextArea();
     private final Label provider = new Label();
     private final Label document = new Label();
@@ -58,6 +62,7 @@ final class AiChat extends VBox {
         while (change.next()) {
             for (EditorDocument removed : change.getRemoved()) {
                 conversations.remove(removed);
+                removeFeedback(removed);
                 if (active != null && active.document == removed) active.future.cancel(true);
             }
         }
@@ -114,10 +119,15 @@ final class AiChat extends VBox {
         cancel.setOnAction(event -> { if (active != null) active.future.cancel(true); });
         clear.setOnAction(event -> {
             conversations.remove(workspace.getActiveDocument());
+            removeFeedback(workspace.getActiveDocument());
             refresh();
         });
+        feedbackScroll.setFitToWidth(true);
+        feedbackScroll.setPrefViewportHeight(180);
+        feedbackScroll.setMaxHeight(240);
+        feedbackScroll.setId("ai-feedback");
         HBox buttons = new HBox(6, send, cancel, clear);
-        getChildren().addAll(provider, document, disclosure, transcript, input, buttons);
+        getChildren().addAll(provider, document, disclosure, transcript, feedbackScroll, input, buttons);
         workspace.activeDocumentProperty().addListener(documentChanged);
         workspace.getDocuments().addListener(documentsChanged);
         refresh();
@@ -138,6 +148,12 @@ final class AiChat extends VBox {
         }
         transcript.setText(text.toString());
         transcript.positionCaret(text.length());
+        Map<AiEdits.Message, AiFeedback> cardByMessage = feedback.getOrDefault(current, Map.of());
+        List<AiFeedback> cards = conversations.getOrDefault(current, List.of()).stream()
+                .map(cardByMessage::get).filter(java.util.Objects::nonNull).toList();
+        feedbackCards.getChildren().setAll(cards);
+        feedbackScroll.setVisible(!cards.isEmpty());
+        feedbackScroll.setManaged(!cards.isEmpty());
         updateControls();
     }
 
@@ -204,20 +220,34 @@ final class AiChat extends VBox {
             activity.accept("AI edit discarded: the project changed during the request.");
             append(pending.document, "assistant", "The project changed during the request; no AI edits were applied.");
         } else {
+            AiFeedback card = null;
             if (!pending.snapshot.equals(result.animation())) {
                 pending.document.execute(Commands.setDocument("AI Edit", ignored -> result.animation()));
+                if (!result.changes().isEmpty()) {
+                    card = new AiFeedback(pending.document, result);
+                }
             }
             activity.accept("AI edit completed: " + pending.context);
-            append(pending.document, "assistant", result.reply());
+            AiEdits.Message message = append(pending.document, "assistant", result.reply());
+            if (card != null) {
+                feedback.computeIfAbsent(pending.document, ignored -> new IdentityHashMap<>()).put(message, card);
+            }
         }
         refresh();
     }
 
-    private void append(EditorDocument target, String role, String text) {
+    private AiEdits.Message append(EditorDocument target, String role, String text) {
         List<AiEdits.Message> messages = conversations.computeIfAbsent(target, ignored -> new ArrayList<>());
-        messages.add(new AiEdits.Message(role, text));
-        while (messages.size() > 20) messages.removeFirst();
+        AiEdits.Message message = new AiEdits.Message(role, text);
+        messages.add(message);
+        while (messages.size() > 20) {
+            AiEdits.Message removed = messages.removeFirst();
+            Map<AiEdits.Message, AiFeedback> cards = feedback.get(target);
+            AiFeedback card = cards == null ? null : cards.remove(removed);
+            if (card != null) card.dispose();
+        }
         if (workspace.getActiveDocument() == target) refresh();
+        return message;
     }
 
     void dispose() {
@@ -230,6 +260,12 @@ final class AiChat extends VBox {
         workspace.activeDocumentProperty().removeListener(documentChanged);
         workspace.getDocuments().removeListener(documentsChanged);
         conversations.clear();
+        for (EditorDocument document : List.copyOf(feedback.keySet())) removeFeedback(document);
         refresh();
+    }
+
+    private void removeFeedback(EditorDocument document) {
+        Map<AiEdits.Message, AiFeedback> removed = feedback.remove(document);
+        if (removed != null) removed.values().forEach(AiFeedback::dispose);
     }
 }

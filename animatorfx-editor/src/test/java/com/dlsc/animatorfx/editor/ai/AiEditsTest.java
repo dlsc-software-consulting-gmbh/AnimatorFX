@@ -3,6 +3,7 @@ package com.dlsc.animatorfx.editor.ai;
 import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
+import com.dlsc.animatorfx.model.Effect;
 import com.dlsc.animatorfx.model.Geometry;
 import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.LayerBase;
@@ -38,6 +39,8 @@ class AiEditsTest {
         assertEquals("Done", result.reply());
         var layer = result.animation().layers().getFirst();
         assertEquals(new Vec2(100, 200), LayerProperties.get(layer, "transform.position").at(1));
+        assertEquals(layer.base().transform().position().keyframes().getFirst().id(),
+                result.changes().getFirst().keyframeId());
         assertEquals(before.layers().getFirst().id(), layer.id());
         assertEquals(before.assets(), result.animation().assets());
         assertEquals(((ShapeLayer) before.layers().getFirst()).geometry(), ((ShapeLayer) layer).geometry());
@@ -52,6 +55,59 @@ class AiEditsTest {
                 operation("set", "missing", "opacity", "0.2", null)));
         assertThrows(Exception.class, () -> AiEdits.parse(response, before));
         assertFalse(LayerProperties.get(before.layers().getFirst(), "opacity").isAnimated());
+    }
+
+    @Test
+    void addsAndChangesDropShadowsWithoutLosingExistingEffects() throws Exception {
+        Animation before = scene();
+        var blur = new Effect.Blur(Animatable.of(3.0));
+        var layer = before.layers().getFirst();
+        before = before.withLayers(List.of(layer.withBase(layer.base().withEffects(List.of(blur)))));
+        String shadow = "{\"color\":{\"r\":0,\"g\":0,\"b\":0,\"a\":0.6},"
+                + "\"radius\":12,\"offsetX\":2,\"offsetY\":4,\"spread\":0.2}";
+        var add = operation("shadow", "ball", null, shadow, null);
+        AiEdits.Result result = AiEdits.parse(response(List.of(add)), before);
+        assertTrue(result.changes().stream().anyMatch(change -> change.layerId().equals("ball")
+                && change.property().equals("effects[1]")));
+        Animation after = result.animation();
+        assertEquals(blur, after.layers().getFirst().base().effects().getFirst());
+        var added = assertInstanceOf(Effect.DropShadow.class, after.layers().getFirst().base().effects().getLast());
+        assertEquals(12, added.radius().at(0));
+        var change = operation("shadow", "ball", "effects[1]",
+                "{\"color\":{\"r\":1,\"g\":0,\"b\":0,\"a\":1},"
+                        + "\"radius\":5,\"offsetX\":0,\"offsetY\":6,\"spread\":0}", null);
+        Animation changed = AiEdits.parse(response(List.of(change)), after).animation();
+        assertEquals(blur, changed.layers().getFirst().base().effects().getFirst());
+        var edited = assertInstanceOf(Effect.DropShadow.class, changed.layers().getFirst().base().effects().getLast());
+        assertEquals(5, edited.radius().at(0));
+        assertEquals(new Rgba(1, 0, 0, 1), edited.color().at(0));
+    }
+
+    @Test
+    void rejectsInvalidDropShadowsWithoutChangingTheProject() {
+        Animation before = scene();
+        var invalid = operation("shadow", "ball", null,
+                "{\"color\":{\"r\":0,\"g\":0,\"b\":0,\"a\":1},"
+                        + "\"radius\":-1,\"offsetX\":0,\"offsetY\":0,\"spread\":0}", null);
+        assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(invalid)), before));
+        assertTrue(before.layers().getFirst().base().effects().isEmpty());
+    }
+
+    @Test
+    void doesNotReplaceAnAnimatedShadowOrEditALockedLayer() {
+        var shadow = new Effect.DropShadow(Animatable.of(Rgba.BLACK),
+                Animatable.of(1.0).withKeyframe(0, 3.0, com.dlsc.animatorfx.model.Easing.LINEAR),
+                Animatable.of(0.0), Animatable.of(0.0), Animatable.of(0.0));
+        var layer = scene().layers().getFirst();
+        Animation before = scene().withLayers(List.of(layer.withBase(layer.base().withEffects(List.of(shadow)))));
+        String value = "{\"color\":{\"r\":0,\"g\":0,\"b\":0,\"a\":1},"
+                + "\"radius\":5,\"offsetX\":0,\"offsetY\":0,\"spread\":0}";
+        assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(
+                response(List.of(operation("shadow", "ball", "effects[0]", value, null))), before));
+        var locked = before.layers().getFirst().withBase(before.layers().getFirst().base().withLocked(true));
+        assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(
+                response(List.of(operation("shadow", "ball", null, value, null))), before.withLayers(List.of(locked))));
+        assertSame(shadow, before.layers().getFirst().base().effects().getFirst());
     }
 
     @Test

@@ -206,6 +206,8 @@ class AiProviderClientTest {
                 } else {
                     assertTrue(body.get("system").toString().contains(JsonWriter.write(AiEdits.schema())));
                 }
+                assertTrue(body.toString().contains("shadow"));
+                assertTrue(body.toString().contains("offsetX"));
             }
         }
     }

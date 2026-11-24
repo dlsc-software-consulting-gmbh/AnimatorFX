@@ -19,7 +19,7 @@ public final class AiEditService {
             "Invalid add operation.", "A new layer identifier is ambiguous.", "Too many new layers.",
             "Too many new keyframes.", "A new layer extends beyond the project duration.",
             "A new keyframe is beyond the project duration.", "Invalid property edit.", "Unknown target layer.",
-            "The target layer is locked.",
+            "The target layer is locked.", "Invalid shadow edit.",
             "Invalid text edit.", "Unsupported property.", "Property is unavailable on the target layer.",
             "A static edit cannot replace an animated track.", "Invalid keyframe.", "Unsupported edit operation.",
             "Invalid property value.", "Invalid numeric value.", "Invalid color.",

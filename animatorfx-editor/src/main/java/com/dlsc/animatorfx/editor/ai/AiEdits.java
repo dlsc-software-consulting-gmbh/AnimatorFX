@@ -4,6 +4,8 @@ import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Easing;
+import com.dlsc.animatorfx.model.Effect;
+import com.dlsc.animatorfx.model.AudioLayer;
 import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.Layer;
 import com.dlsc.animatorfx.model.LayerProperties;
@@ -18,13 +20,23 @@ import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /** Validates and prepares an atomic set of AI-proposed edits without mutating a document. */
 public final class AiEdits {
-    public record Result(String reply, Animation animation) {}
+    public record Change(String layerId, String property, String keyframeId) {}
+    public record Result(String reply, Animation animation, List<Change> changes) {
+        public Result {
+            changes = List.copyOf(changes);
+        }
+
+        public Result(String reply, Animation animation) {
+            this(reply, animation, List.of());
+        }
+    }
     public record Message(String role, String text) {}
 
     private static final Set<String> PROPERTIES = Set.of(
@@ -62,7 +74,7 @@ public final class AiEdits {
                 List.of(Map.of("type", "number"), Map.of("type", "null")));
         Map<String, Object> operation = Map.of("type", "object", "additionalProperties", false,
                 "properties", Map.of(
-                        "kind", Map.of("type", "string", "enum", List.of("add", "set", "keyframe", "text")),
+                        "kind", Map.of("type", "string", "enum", List.of("add", "set", "keyframe", "text", "shadow")),
                         "target", optionalString, "parent", optionalString, "property", optionalString,
                         "value", string, "time", optionalNumber, "easing", optionalString),
                 "required", List.of("kind", "target", "parent", "property", "value", "time", "easing"));
@@ -124,6 +136,11 @@ public final class AiEdits {
                 transform.position, transform.scale, transform.rotation, transform.skew, opacity, geometry.size,
                 geometry.cornerRadius, geometry.start, geometry.end, geometry.radius, geometry.outerRadius,
                 geometry.innerRadius, fontSize, fill, stroke.paint, stroke.width. Never invent asset references.
+                For shadow: target is a visual layer ID, parent/time/easing are null. Set property to null to
+                append a drop shadow, or "effects[N]" to replace an existing static drop shadow at that index.
+                The JSON-encoded value is {"color":{"r":0,"g":0,"b":0,"a":0.5},"radius":12,
+                "offsetX":0,"offsetY":4,"spread":0}. Colors and spread are 0..1, radius is 0..256,
+                offsets are -32768..32768. Do not replace animated shadows.
                 The following complete example adds a falling dot at the root of a project at least 3 seconds
                 long. Adapt its fragment dimensions, duration, IDs, layers and motion to the user's project.
                 Example edit response:
@@ -144,6 +161,7 @@ public final class AiEdits {
         }
         Animation current = before;
         Map<String, String> aliases = new HashMap<>();
+        List<Change> changes = new ArrayList<>();
         int addedLayers = 0;
         int addedKeyframes = 0;
         for (Object raw : operations) {
@@ -183,12 +201,52 @@ public final class AiEdits {
                         throw new IllegalArgumentException("A new layer identifier is ambiguous.");
                     }
                     aliases.put(id, fresh.get(i).id());
+                    changes.add(new Change(fresh.get(i).id(), null, null));
                 }
                 for (Layer layer : copies) {
                     int index = parent == null ? current.layers().size()
                             : ((GroupLayer) Layers.find(current, parent).orElseThrow()).children().size();
                     current = Layers.insert(current, parent, index, layer);
                 }
+                continue;
+            }
+            if (kind.equals("shadow")) {
+                if (!(op.get("target") instanceof String id) || op.get("parent") != null
+                        || op.get("time") != null || op.get("easing") != null
+                        || !(op.get("property") == null || op.get("property") instanceof String)) {
+                    throw new IllegalArgumentException("Invalid shadow edit.");
+                }
+                String target = resolve(id, aliases);
+                requireUnlocked(current, target);
+                Layer layer = Layers.find(current, target).orElseThrow();
+                if (layer instanceof AudioLayer) throw new IllegalArgumentException("Invalid shadow edit.");
+                AiAnimation.checkTokens(value);
+                Map<?, ?> data = object(Json.parse(value), Set.of("color", "radius", "offsetX", "offsetY", "spread"));
+                Rgba color = color(data.get("color"));
+                double radius = number(data.get("radius"));
+                double x = number(data.get("offsetX"));
+                double y = number(data.get("offsetY"));
+                double spread = number(data.get("spread"));
+                if (radius < 0 || radius > 256 || Math.abs(x) > 32768 || Math.abs(y) > 32768
+                        || spread < 0 || spread > 1) throw new IllegalArgumentException("Invalid shadow edit.");
+                Effect.DropShadow shadow = new Effect.DropShadow(Animatable.of(color), Animatable.of(radius),
+                        Animatable.of(x), Animatable.of(y), Animatable.of(spread));
+                List<Effect> effects = new ArrayList<>(layer.base().effects());
+                int index = effects.size();
+                if (op.get("property") instanceof String property) {
+                    if (!property.matches("effects\\[[0-9]{1,6}]")) throw new IllegalArgumentException("Invalid shadow edit.");
+                    index = Integer.parseInt(property.substring(8, property.length() - 1));
+                    if (index >= effects.size() || !(effects.get(index) instanceof Effect.DropShadow old)
+                            || old.color().isAnimated() || old.radius().isAnimated() || old.offsetX().isAnimated()
+                            || old.offsetY().isAnimated() || old.spread().isAnimated()) {
+                        throw new IllegalArgumentException("Invalid shadow edit.");
+                    }
+                    effects.set(index, shadow);
+                } else {
+                    effects.add(shadow);
+                }
+                current = Layers.replace(current, target, existing -> existing.withBase(existing.base().withEffects(effects)));
+                changes.add(new Change(target, "effects[" + index + "]", null));
                 continue;
             }
             if (!(op.get("target") instanceof String target) || op.get("parent") != null
@@ -208,13 +266,14 @@ public final class AiEdits {
                     throw new IllegalArgumentException("Invalid text edit.");
                 }
                 current = Layers.replace(current, target, ignored -> text.withText(content));
+                changes.add(new Change(target, "text", null));
                 continue;
             }
             if (!PROPERTIES.contains(property)) throw new IllegalArgumentException("Unsupported property.");
             PropertyRef ref = LayerProperties.list(layer).stream().filter(p -> p.key().equals(property)).findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("Property is unavailable on the target layer."));
             Object converted = value(rawValue, ref.type());
-            validate(property, converted);
+            validateValue(property, converted);
             Animatable<?> updated;
             if (kind.equals("set")) {
                 if (op.get("time") != null || op.get("easing") != null || ref.value().isAnimated()) {
@@ -236,9 +295,14 @@ public final class AiEdits {
             }
             Animatable<?> next = updated;
             current = Layers.replace(current, target, existing -> LayerProperties.set(existing, property, next));
+            String keyframeId = kind.equals("keyframe")
+                    ? updated.keyframes().stream()
+                    .filter(frame -> Math.abs(frame.time() - ((Number) op.get("time")).doubleValue()) < Animatable.TIME_EPSILON)
+                    .findFirst().orElseThrow().id() : null;
+            changes.add(new Change(target, property, keyframeId));
         }
         AnimationJson.fromJson(AnimationJson.toJson(current));
-        return new Result(reply, current);
+        return new Result(reply, current, changes);
     }
 
     private static String resolve(String id, Map<String, String> aliases) {
@@ -269,12 +333,17 @@ public final class AiEdits {
                 yield new Vec2(number(map.get("x")), number(map.get("y")));
             }
             case PAINT -> {
-                Map<?, ?> map = object(raw, Set.of("r", "g", "b", "a"));
-                yield new Paint.Solid(new Rgba(number(map.get("r")), number(map.get("g")),
-                        number(map.get("b")), number(map.get("a"))));
+                yield new Paint.Solid(color(raw));
             }
             default -> throw new IllegalArgumentException("Unsupported property value.");
         };
+    }
+
+    private static Rgba color(Object raw) {
+        Map<?, ?> map = object(raw, Set.of("r", "g", "b", "a"));
+        Rgba color = new Rgba(number(map.get("r")), number(map.get("g")), number(map.get("b")), number(map.get("a")));
+        validateValue("", new Paint.Solid(color));
+        return color;
     }
 
     private static Map<?, ?> object(Object value, Set<String> fields) {
@@ -291,9 +360,9 @@ public final class AiEdits {
         return n.doubleValue();
     }
 
-    private static void validate(String property, Object value) {
-        if (value instanceof Paint.Solid solid) {
-            Rgba color = solid.color();
+    public static void validateValue(String property, Object value) {
+        if (value instanceof Paint.Solid || value instanceof Rgba) {
+            Rgba color = value instanceof Paint.Solid solid ? solid.color() : (Rgba) value;
             for (double component : new double[]{color.r(), color.g(), color.b(), color.a()}) {
                 if (component < 0 || component > 1) throw new IllegalArgumentException("Invalid color.");
             }
@@ -306,6 +375,7 @@ public final class AiEdits {
                 throw new IllegalArgumentException("Vector is outside the allowed range.");
             }
         } else if (value instanceof Double number) {
+            if (!Double.isFinite(number)) throw new IllegalArgumentException("Invalid numeric value.");
             double min = switch (property) {
                 case "opacity", "geometry.cornerRadius", "stroke.width" -> 0;
                 case "fontSize" -> 1;
@@ -320,6 +390,11 @@ public final class AiEdits {
                 case "geometry.radius", "geometry.outerRadius", "geometry.innerRadius" -> 8192;
                 default -> 36000;
             };
+            if (property.startsWith("effects[")) {
+                if (property.endsWith(".radius")) { min = 0; max = 256; }
+                if (property.endsWith(".spread")) { min = 0; max = 1; }
+                if (property.endsWith(".offsetX") || property.endsWith(".offsetY")) { min = -32768; max = 32768; }
+            }
             if (number < min || number > max) throw new IllegalArgumentException("Number is outside the allowed range.");
         }
     }
