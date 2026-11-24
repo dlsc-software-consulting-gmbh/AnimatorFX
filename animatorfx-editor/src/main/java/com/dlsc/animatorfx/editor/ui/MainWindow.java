@@ -2,6 +2,7 @@ package com.dlsc.animatorfx.editor.ui;
 
 import com.dlsc.animatorfx.editor.ai.AiAnimation;
 import com.dlsc.animatorfx.editor.ai.AiCredentialStore;
+import com.dlsc.animatorfx.editor.ai.AiEditService;
 import com.dlsc.animatorfx.editor.ai.AiGenerationService;
 import com.dlsc.animatorfx.editor.ai.AiModelCatalog;
 import com.dlsc.animatorfx.editor.ai.AiProviderClient;
@@ -48,11 +49,15 @@ import javafx.stage.WindowEvent;
 import java.io.File;
 import java.io.UncheckedIOException;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * The main window in the motion-tool layout: window header with document tabs, playback toolbar, tool rail
@@ -86,6 +91,8 @@ public final class MainWindow {
     private final StatusBar statusBar = new StatusBar();
     private final CanvasView canvasView = new CanvasView();
     private final SidePanel sidePanel = new SidePanel();
+    private final AiConsole aiConsole = new AiConsole();
+    private final AiChat aiChat;
     private final TimelineView timelineView = new TimelineView();
     private final StackPane canvasSlot = new StackPane(canvasView);
     private final StackPane sideSlot = new StackPane(sidePanel);
@@ -97,6 +104,10 @@ public final class MainWindow {
     private final MenuBar menuBar;
     private final Scene scene;
     private final SessionController session;
+    private final Path aiSettings;
+    private final Function<String, String> readAiKey;
+    private long aiConsoleRevision;
+    private boolean closed;
 
     private double sideDivider = Layout.DEFAULT.sideDivider();
     private double timelineDivider = Layout.DEFAULT.timelineDivider();
@@ -124,6 +135,16 @@ public final class MainWindow {
     MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs,
                Function<String, String> readAiKey,
                BiFunction<AiProviderClient.Provider, String, CompletableFuture<List<String>>> listModels) {
+        this(stage, sessionStore, recoveryStore, dialogs, readAiKey, listModels,
+                AppDirs.configDir().resolve("ai.properties"),
+                (provider, key) -> new AiCredentialStore().put(provider, key),
+                provider -> new AiCredentialStore().delete(provider));
+    }
+
+    MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs,
+               Function<String, String> readAiKey,
+               BiFunction<AiProviderClient.Provider, String, CompletableFuture<List<String>>> listModels,
+               Path aiSettings, BiConsumer<String, String> putAiKey, Consumer<String> deleteAiKey) {
         this.stage = stage;
         stage.initStyle(StageStyle.EXTENDED);
         Image icon = new Image(MainWindow.class.getResource(
@@ -133,22 +154,28 @@ public final class MainWindow {
         fileActions = new FileActions(workspace, this.dialogs, noticeBar, () -> stage);
         importActions = new ImportActions(workspace, noticeBar, this.dialogs, () -> stage);
         exportActions = new ExportActions(workspace, noticeBar, this.dialogs, () -> stage);
-        var aiSettings = AppDirs.configDir().resolve("ai.properties");
+        this.aiSettings = aiSettings;
+        this.readAiKey = readAiKey;
         AiProviderClient aiClient = new AiProviderClient();
         AiGenerationService generator = new AiGenerationService(aiSettings,
                 readAiKey,
                 (provider, model, key, prompt) -> aiClient.generate(provider, model, key, prompt, AiAnimation.schema()));
-        aiActions = new AiActions(dialogLayer, workspace, () -> {
+        Supplier<AiSettings> loadAiSettings = () -> {
             try {
                 return AiSettings.load(aiSettings);
             } catch (IOException ex) {
                 throw new UncheckedIOException(ex);
             }
-        }, generator::generate);
+        };
+        AiEditService editor = new AiEditService(readAiKey, aiClient::edit);
+        aiChat = new AiChat(workspace, loadAiSettings, editor::edit, aiConsole::log);
+        aiConsole.installChat(aiChat);
+        aiActions = new AiActions(dialogLayer, workspace, loadAiSettings, generator::generate, aiConsole::log);
         aiPreferences = new AiPreferencesDialog(dialogLayer, aiSettings,
-                (provider, key) -> new AiCredentialStore().put(provider, key),
-                provider -> new AiCredentialStore().delete(provider),
-                readAiKey, listModels);
+                putAiKey, deleteAiKey, readAiKey, listModels, () -> {
+                    aiChat.refresh();
+                    refreshAiConsole();
+                });
         HeaderBarView header = new HeaderBarView(
                 new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme, icon, canvasView);
         HeaderBar.systemColorSchemeProperty(stage).bind(Bindings.when(theme.darkProperty())
@@ -223,6 +250,7 @@ public final class MainWindow {
         session = new SessionController(this, sessionStore, recoveryStore);
         session.restore();
         session.start();
+        refreshAiConsole();
     }
 
     public void show() {
@@ -243,7 +271,8 @@ public final class MainWindow {
         if (!session.shutdown()) {
             return false;
         }
-        runShutdownSteps(List.of(aiActions::dispose, canvasView::dispose, theme::dispose));
+        closed = true;
+        runShutdownSteps(List.of(aiActions::dispose, aiChat::dispose, canvasView::dispose, theme::dispose));
         return true;
     }
 
@@ -292,6 +321,23 @@ public final class MainWindow {
 
     void showAiPreferences() {
         aiPreferences.show();
+    }
+
+    private void refreshAiConsole() {
+        if (closed) return;
+        long revision = ++aiConsoleRevision;
+        sidePanel.setAiConsoleAvailable(aiConsole, false);
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                AiSettings settings = AiSettings.load(aiSettings);
+                String key = readAiKey.apply(settings.provider().name());
+                return key != null && !key.isBlank() && key.length() <= 1000;
+            } catch (Exception | LinkageError ex) {
+                return false;
+            }
+        }).thenAccept(available -> Platform.runLater(() -> {
+            if (!closed && revision == aiConsoleRevision) sidePanel.setAiConsoleAvailable(aiConsole, available);
+        }));
     }
 
     public Dialogs getDialogs() {

@@ -204,12 +204,11 @@ mvn -pl samples/animatorfx-sample-app test -Dtest=SampleFilesTest#loginSceneHasA
 it runs on in `animatorfx-editor/target/dist` (`AnimatorFX.app` on macOS). Add `-DskipTests` if
 the tests have already run. The profile
 
-1. copies the editor and its runtime dependencies, all of them explicit JPMS modules (GemsFX and
-   what its module descriptor requires included: ValidatorFX, PickerFX, JSVG, three Ikonli packs
-   and `javafx.swing`; `javafx.media` with its native libraries; `java.desktop`), to
-   `target/package/modules`,
-2. links a trimmed Java runtime that contains them with `jlink` (`target/package/runtime`),
-3. wraps that runtime with `jpackage --type app-image` (name AnimatorFX, version 1.0.0, bundle
+1. copies the editor and its runtime dependencies to `target/package/app/lib`,
+2. links a trimmed Java runtime with JavaFX and the required JDK modules (`target/package/runtime`).
+   Application libraries run on the class path because LangChain4j uses automatic modules, which
+   `jlink` cannot link,
+3. wraps the application and runtime with `jpackage --type app-image` (name AnimatorFX, version 1.0.0, bundle
    identifier `com.dlsc.animatorfx.editor`, and on macOS the icon `src/package/macos/AnimatorFX.icns`).
 
 ```bash
@@ -443,7 +442,8 @@ dialogs of the operating system.
 
 ### AI-generated animations
 
-Choose *Edit ▸ AI Preferences…* to select OpenAI or Anthropic and save the provider's API key in
+AnimatorFX uses LangChain4j for generation. Choose *Edit ▸ AI Preferences…* to select OpenAI or
+Anthropic and save the provider's API key in
 the operating system's credential store. The model dropdowns load models available to each key;
 use *Refresh* after entering a new key, or type a model ID manually. Not every listed model
 supports structured animation generation. On Linux, a working Secret Service or GNOME Keyring is
@@ -455,6 +455,22 @@ provider and model; your description is sent to that provider and may incur char
 validated and opens as a new, unsaved
 document containing editable vector layers and keyframes; it does not generate image, audio or
 video assets. Cancelling or failing a request leaves your existing documents unchanged.
+
+When the selected provider has a saved key and model, the side panel offers an *AI Console*.
+Use its *Chat* tab to describe additions or changes to the current project. It can add vector and
+text layers and groups, edit supported properties and text, and add or update keyframes. Changes
+are validated and applied as one undoable edit; a response is discarded if the project changes
+while the request is in progress. Locked layers and groups are not modified.
+
+The project structure (including layer names and text), selection, playhead and recent conversation
+are sent to the selected provider and may incur charges. Embedded media and local asset paths are
+not sent. Conversations are kept in memory per open document and can be cleared in *Chat*.
+The separate *Activity* tab shows session activity and sanitized error details; prompts, project
+content and API keys are not intentionally recorded there.
+
+AI provider requests and responses are also logged to the application terminal, including prompts
+and project content. The configured API key is redacted and HTTP headers are not logged; treat
+terminal logs as private.
 
 ### Tools and shortcuts
 

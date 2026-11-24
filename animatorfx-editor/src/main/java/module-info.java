@@ -5,6 +5,7 @@ module com.dlsc.animatorfx.editor {
     requires javafx.controls;
     requires javafx.media;
     requires java.net.http;
+    requires java.logging;
     requires langchain4j.core;
     requires langchain4j.http.client;
     requires langchain4j.open.ai;
