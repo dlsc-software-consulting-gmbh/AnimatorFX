@@ -26,6 +26,7 @@ import com.dlsc.animatorfx.model.Vec2;
 import javafx.collections.ObservableList;
 import javafx.scene.Cursor;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
@@ -543,7 +544,36 @@ public final class SelectTool implements Tool {
         if (canvas.getActions().canConvertToPath()) {
             items.add(menuItem("canvas-menu-convert-to-path", "Convert to Path", canvas.getActions()::convertToPath));
         }
+        if (!items.isEmpty()) {
+            items.add(new SeparatorMenuItem());
+        }
+        boolean hasSelection = !selection().isEmpty();
+        boolean hasGroup = selection().stream()
+                .anyMatch(id -> canvas.getGeometry().layer(id).filter(GroupLayer.class::isInstance).isPresent());
+        items.add(menuItem("canvas-menu-cut", "Cut", canvas.getActions()::cut, hasSelection));
+        items.add(menuItem("canvas-menu-copy", "Copy", canvas.getActions()::copy, hasSelection));
+        items.add(menuItem("canvas-menu-paste", "Paste", canvas.getActions()::paste,
+                !canvas.getActions().getClipboard().isEmpty()));
+        items.add(menuItem("canvas-menu-duplicate", "Duplicate", canvas.getActions()::duplicate, hasSelection));
+        items.add(new SeparatorMenuItem());
+        items.add(menuItem("canvas-menu-group", "Group", canvas.getActions()::group, hasSelection));
+        items.add(menuItem("canvas-menu-ungroup", "Ungroup", canvas.getActions()::ungroup, hasGroup));
+        items.add(new SeparatorMenuItem());
+        items.add(menuItem("canvas-menu-bring-forward", "Bring Forward",
+                () -> canvas.getActions().reorder(Commands.Order.FORWARD), hasSelection));
+        items.add(menuItem("canvas-menu-bring-to-front", "Bring to Front",
+                () -> canvas.getActions().reorder(Commands.Order.FRONT), hasSelection));
+        items.add(menuItem("canvas-menu-send-backward", "Send Backward",
+                () -> canvas.getActions().reorder(Commands.Order.BACKWARD), hasSelection));
+        items.add(menuItem("canvas-menu-send-to-back", "Send to Back",
+                () -> canvas.getActions().reorder(Commands.Order.BACK), hasSelection));
         return items;
+    }
+
+    private static MenuItem menuItem(String id, String text, Runnable action, boolean enabled) {
+        MenuItem item = menuItem(id, text, action);
+        item.setDisable(!enabled);
+        return item;
     }
 
     private static MenuItem menuItem(String id, String text, Runnable action) {

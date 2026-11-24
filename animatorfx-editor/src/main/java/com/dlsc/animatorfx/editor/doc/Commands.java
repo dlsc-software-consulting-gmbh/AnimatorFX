@@ -87,7 +87,8 @@ public final class Commands {
      * Deep-copies the layers with fresh layer and keyframe ids and inserts each copy directly
      * above its original. A layer inside a group that is duplicated as well is not copied twice.
      * Masks inside the copies point to the copied mask layer when that was duplicated too. A
-     * copied slot gets the next free slot name: slot names are unique in a document.
+     * copied slot gets the next free slot name: slot names are unique in a document. Visual
+     * copies are offset in their parent's coordinate space; audio layers have no position.
      */
     public static Command duplicateLayers(Collection<String> ids) {
         Set<String> wanted = new LinkedHashSet<>(ids);
@@ -103,7 +104,7 @@ public final class Commands {
             Animation after = before;
             Set<String> slotNames = slotNames(before);
             for (Layer original : originals) {
-                Layer copy = uniqueSlots(copy(original, newIds), slotNames);
+                Layer copy = translated(uniqueSlots(copy(original, newIds), slotNames), new Vec2(10, 10));
                 copy = copy.withBase(copy.base().withName(original.name() + " copy"));
                 String parentId = Layers.parentOf(after, original.id()).map(Layer::id).orElse(null);
                 List<Layer> siblings = parentId == null ? after.layers()

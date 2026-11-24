@@ -618,7 +618,8 @@ class PathToolsTest extends CanvasTestBase {
 
         List<String> ids = fx(() -> canvas.getTool(ToolKind.SELECT).menuItems(Pointer.at(view(140, 130).x(), view(140, 130).y())))
                 .stream().map(MenuItem::getId).toList();
-        assertEquals(List.of("canvas-menu-convert-to-path"), ids);
+        assertTrue(ids.contains("canvas-menu-convert-to-path"));
+        assertFalse(ids.contains("canvas-menu-edit-path"));
         run(() -> canvas.getActions().convertToPath());
         layout();
 

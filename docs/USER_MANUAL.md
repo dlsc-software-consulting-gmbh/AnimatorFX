@@ -78,6 +78,8 @@ Draw rectangles, ellipses, lines, polygons, and stars with the shape tools. Use 
 
 In the timeline, drag rows to reorder layers or move them into groups. Lock a layer to prevent accidental editing; hide it to exclude it from the preview. Drag the middle of a layer bar to move its active interval, or drag an edge to change when the layer appears or disappears. Expand a row to edit its property keyframes.
 
+With the Select tool active, right-click the canvas for Cut, Copy, Paste, Duplicate, Group, Ungroup, and layer ordering. Right-clicking an unselected layer selects it; right-clicking a selected layer keeps the current selection. You can also paste onto empty canvas. Duplicated visual layers are offset slightly so the copies are visible.
+
 ### Give a layer more movement
 
 | To achieve this | Use this |

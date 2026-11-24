@@ -22,7 +22,9 @@ import com.dlsc.animatorfx.model.Vec2;
 import javafx.event.Event;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
@@ -58,6 +60,82 @@ class CanvasActionsTest extends CanvasTestBase {
 
     private String zoomLabel() {
         return fx(() -> ((Label) window.getScene().lookup("#zoom")).getText());
+    }
+
+    private void contextMenu(double x, double y) {
+        Vec2 at = view(x, y);
+        run(() -> {
+            var scene = canvas.localToScene(at.x(), at.y());
+            var screen = canvas.localToScreen(at.x(), at.y());
+            Event.fireEvent(canvas, new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED,
+                    scene.getX(), scene.getY(), screen.getX(), screen.getY(), false, null));
+        });
+        layout();
+    }
+
+    private MenuItem contextItem(String id) {
+        return fx(() -> canvas.getContextMenu().getItems().stream()
+                .filter(item -> id.equals(item.getId())).findFirst().orElseThrow());
+    }
+
+    private void fireContext(String id) {
+        MenuItem item = contextItem(id);
+        run(item::fire);
+        layout();
+    }
+
+    @Test
+    void canvasContextMenuGroupsAndUngroupsTheSelectedLayers() {
+        add(rect("a", 100, 100, 100, 100), rect("b", 300, 100, 100, 100));
+        select("a", "b");
+        contextMenu(150, 150);
+        assertEquals(List.of("a", "b"), selection());
+        assertFalse(contextItem("canvas-menu-group").isDisable());
+        assertTrue(contextItem("canvas-menu-ungroup").isDisable());
+        fireContext("canvas-menu-group");
+        GroupLayer group = (GroupLayer) layers().get(0);
+        assertEquals(List.of("a", "b"), group.children().stream().map(Layer::id).toList());
+        assertEquals("Group", doc.getUndoName());
+
+        contextMenu(150, 150);
+        fireContext("canvas-menu-ungroup");
+        assertEquals(List.of("a", "b"), ids());
+        assertEquals("Ungroup", doc.getUndoName());
+        run(doc::undo);
+        assertTrue(layers().get(0) instanceof GroupLayer);
+    }
+
+    @Test
+    void canvasContextMenuClipboardAndOrderActionsUseTheExistingCommands() {
+        add(rect("a", 100, 100, 100, 100), rect("b", 300, 100, 100, 100),
+                rect("c", 500, 100, 100, 100));
+        contextMenu(150, 150);
+        assertEquals(List.of("a"), selection());
+        assertFalse(contextItem("canvas-menu-copy").isDisable());
+        assertTrue(contextItem("canvas-menu-paste").isDisable());
+        fireContext("canvas-menu-bring-forward");
+        assertEquals(List.of("b", "a", "c"), ids());
+        fireContext("canvas-menu-bring-to-front");
+        assertEquals(List.of("b", "c", "a"), ids());
+        fireContext("canvas-menu-send-backward");
+        assertEquals(List.of("b", "a", "c"), ids());
+        fireContext("canvas-menu-send-to-back");
+        assertEquals(List.of("a", "b", "c"), ids());
+
+        fireContext("canvas-menu-copy");
+        select();
+        contextMenu(700, 500);
+        assertFalse(contextItem("canvas-menu-paste").isDisable());
+        assertTrue(contextItem("canvas-menu-cut").isDisable());
+        fireContext("canvas-menu-paste");
+        assertEquals(4, layers().size());
+        contextMenu(700, 500);
+        fireContext("canvas-menu-duplicate");
+        assertEquals(5, layers().size());
+        contextMenu(700, 500);
+        fireContext("canvas-menu-cut");
+        assertEquals(4, layers().size());
+        assertEquals("Cut", doc.getUndoName());
     }
 
     // ------------------------------------------------------------------ edit menu
@@ -100,6 +178,12 @@ class CanvasActionsTest extends CanvasTestBase {
         assertEquals("a", ids().get(0));
         assertEquals("a copy", layers().get(1).name());
         assertEquals(List.of(layers().get(1).id()), selection());
+        assertEquals(new Vec2(160, 160), position(layers().get(1).id()));
+
+        fire("menu-edit-duplicate");
+        assertEquals(new Vec2(170, 170), position(selection().get(0)));
+        run(doc::undo);
+        assertEquals(3, layers().size());
     }
 
     @Test

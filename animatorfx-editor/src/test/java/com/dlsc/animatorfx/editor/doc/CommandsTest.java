@@ -12,9 +12,12 @@ import com.dlsc.animatorfx.model.LayerBase;
 import com.dlsc.animatorfx.model.LayerProperties;
 import com.dlsc.animatorfx.model.Layers;
 import com.dlsc.animatorfx.model.Mask;
+import com.dlsc.animatorfx.model.MotionPath;
 import com.dlsc.animatorfx.model.Paint;
+import com.dlsc.animatorfx.model.PathData;
 import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
+import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Vec2;
 import org.junit.jupiter.api.Test;
 
@@ -348,5 +351,37 @@ class CommandsTest {
         GroupLayer copy = (GroupLayer) after.layers().get(1);
         assertEquals(2, copy.children().size());
         assertEquals(copy.children().get(0).id(), copy.children().get(1).base().mask().layerId());
+    }
+
+    @Test
+    void duplicateOffsetsAnimatedPositionsAndMotionPathsWithoutMovingTheOriginal() {
+        Animatable<Vec2> position = Animatable.keyframed(List.of(
+                new Keyframe<>("p1", 0, new Vec2(5, 6), Easing.LINEAR),
+                new Keyframe<>("p2", 1, new Vec2(15, 16), Easing.LINEAR)));
+        PathData path = new PathData(List.of(new PathData.Contour(List.of(
+                new PathData.Vertex(new Vec2(20, 30), Vec2.ZERO, Vec2.ZERO),
+                new PathData.Vertex(new Vec2(40, 50), Vec2.ZERO, Vec2.ZERO)), false)));
+        ShapeLayer original = rect("a");
+        original = original.withBase(original.base()
+                .withTransform(Transform.IDENTITY.withPosition(position))
+                .withMotionPath(new MotionPath(path, Animatable.of(0.0), false)));
+
+        Animation after = Commands.duplicateLayers(List.of("a")).apply(doc(original));
+
+        Layer copy = after.layers().get(1);
+        assertEquals(new Vec2(15, 16), copy.base().transform().position().at(0));
+        assertEquals(new Vec2(25, 26), copy.base().transform().position().at(1));
+        assertEquals(new Vec2(30, 40), copy.base().motionPath().path().contours().get(0).vertices().get(0).point());
+        assertEquals(new Vec2(5, 6), after.layers().get(0).base().transform().position().at(0));
+        assertEquals(path, after.layers().get(0).base().motionPath().path());
+    }
+
+    @Test
+    void duplicateOffsetsAGroupOnlyOnceIncludingWhenAChildIsSelected() {
+        Animation after = Commands.duplicateLayers(List.of("g", "a")).apply(doc(group("g", rect("a"))));
+        GroupLayer copy = (GroupLayer) after.layers().get(1);
+
+        assertEquals(new Vec2(10, 10), copy.base().transform().position().at(0));
+        assertEquals(Vec2.ZERO, copy.children().get(0).base().transform().position().at(0));
     }
 }
