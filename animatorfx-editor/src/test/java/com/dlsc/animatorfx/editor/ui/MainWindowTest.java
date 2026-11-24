@@ -27,6 +27,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HeaderBar;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.stage.WindowEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -410,6 +411,76 @@ class MainWindowTest {
             assertEquals(List.of(file), second.getWorkspace().getRecentFiles());
             assertTrue(second.getNoticeBar().getMessages().isEmpty());
         });
+    }
+
+    @Test
+    void restoredSizeIsAppliedBeforeTheWindowIsShown() {
+        MainWindow first = start();
+        run(() -> {
+            first.getStage().setX(40);
+            first.getStage().setY(30);
+            first.getStage().setWidth(1000);
+            first.getStage().setHeight(700);
+        });
+        quit(first);
+
+        List<Double> shownSize = new ArrayList<>();
+        List<String> sizeChanges = new ArrayList<>();
+        MainWindow second = fx(() -> {
+            Stage stage = new Stage();
+            MainWindow w = new MainWindow(stage, new SessionStore(config()),
+                    new RecoveryStore(config().resolve("recovery")), dialogs);
+            stage.addEventHandler(WindowEvent.WINDOW_SHOWN, e -> {
+                shownSize.add(stage.getWidth());
+                shownSize.add(stage.getHeight());
+                stage.widthProperty().addListener((obs, oldWidth, width) -> {
+                    if (Math.abs(width.doubleValue() - 1000) > 1) {
+                        sizeChanges.add("width " + width);
+                    }
+                });
+                stage.heightProperty().addListener((obs, oldHeight, height) -> {
+                    if (Math.abs(height.doubleValue() - 700) > 1) {
+                        sizeChanges.add("height " + height);
+                    }
+                });
+            });
+            w.show();
+            return w;
+        });
+        windows.add(second);
+        WaitForAsyncUtils.waitForFxEvents();
+
+        assertEquals(1000, shownSize.get(0), 1);
+        assertEquals(700, shownSize.get(1), 1);
+        assertEquals(1000, fx(() -> second.getStage().getWidth()), 1);
+        assertEquals(700, fx(() -> second.getStage().getHeight()), 1);
+        assertTrue(sizeChanges.isEmpty(), sizeChanges.toString());
+        quit(second);
+        SessionState.WindowState saved = new SessionStore(config()).load().window();
+        assertEquals(1000, saved.width(), 1);
+        assertEquals(700, saved.height(), 1);
+    }
+
+    @Test
+    void showingAMaximizedWindowKeepsItsNormalBoundsForTheNextRestart() {
+        MainWindow first = start();
+        run(() -> {
+            first.getStage().setX(40);
+            first.getStage().setY(30);
+            first.getStage().setWidth(1000);
+            first.getStage().setHeight(700);
+        });
+        WaitForAsyncUtils.waitForFxEvents();
+        run(() -> first.getStage().setMaximized(true));
+        quit(first);
+
+        MainWindow second = start();
+        assertTrue(fx(() -> second.getStage().isMaximized()));
+        quit(second);
+        SessionState.WindowState saved = new SessionStore(config()).load().window();
+        assertTrue(saved.maximized());
+        assertEquals(1000, saved.width(), 1);
+        assertEquals(700, saved.height(), 1);
     }
 
     @Test

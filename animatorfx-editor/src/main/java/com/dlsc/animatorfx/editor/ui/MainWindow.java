@@ -189,7 +189,7 @@ public final class MainWindow {
     }
 
     public void show() {
-        stage.show();
+        session.showWindow();
     }
 
     /**
