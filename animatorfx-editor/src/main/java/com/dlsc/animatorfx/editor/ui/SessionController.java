@@ -221,6 +221,19 @@ public final class SessionController {
         scheduleSave();
     }
 
+    void showWindow() {
+        Stage stage = window.getStage();
+        if (!stage.isShowing()) {
+            // Lay out the header before the native peer is created: changing its button height
+            // during peer initialization can overwrite the window's explicitly restored size.
+            var root = window.getScene().getRoot();
+            root.applyCss();
+            root.resize(normalBounds.width(), normalBounds.height());
+            root.layout();
+        }
+        stage.show();
+    }
+
     /**
      * Stops the timer that stores recovery copies every five seconds; they are then only stored
      * when asked for, and when the window closes. For tests that decide when a copy is written.
