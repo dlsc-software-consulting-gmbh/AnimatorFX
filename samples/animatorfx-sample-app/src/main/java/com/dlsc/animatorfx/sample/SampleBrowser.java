@@ -7,6 +7,7 @@ import javafx.beans.property.SimpleDoubleProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.Button;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Separator;
 import javafx.scene.layout.BorderPane;
@@ -14,6 +15,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -60,7 +63,18 @@ public final class SampleBrowser extends BorderPane {
         });
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox footer = new HBox(inPlace, spacer, dark);
+        Button loginDemo = new Button("Interactive login demo");
+        loginDemo.setId("open-login-demo");
+        loginDemo.setOnAction(event -> {
+            LoginDemo demo = new LoginDemo();
+            Stage dialog = new Stage();
+            dialog.initOwner(getScene().getWindow());
+            dialog.setTitle("AnimatorFX - Interactive Login Demo");
+            dialog.setScene(new Scene(demo, 1200, 800));
+            dialog.setOnHidden(hidden -> demo.dispose());
+            dialog.show();
+        });
+        HBox footer = new HBox(12, inPlace, spacer, loginDemo, dark);
         footer.setAlignment(Pos.CENTER_LEFT);
         footer.setPadding(new Insets(0, 16, 0, 0));
         setBottom(new VBox(new Separator(), footer));

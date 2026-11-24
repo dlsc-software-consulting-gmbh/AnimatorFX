@@ -1,0 +1,68 @@
+.login-form {
+    -fx-font-family: "System";
+}
+
+.login-brand {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #7753d7;
+    -fx-padding: 0 0 14 0;
+}
+
+.login-title {
+    -fx-font-size: 30px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1c2541;
+}
+
+.login-subtitle {
+    -fx-font-size: 14px;
+    -fx-text-fill: #758099;
+    -fx-padding: 0 0 8 0;
+}
+
+.login-label {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #65708b;
+}
+
+.login-form .text-field {
+    -fx-background-color: #f3f5fa;
+    -fx-background-radius: 9;
+    -fx-border-color: #e4e9f2;
+    -fx-border-radius: 9;
+    -fx-padding: 12 14;
+    -fx-font-size: 14px;
+    -fx-text-fill: #25304c;
+}
+
+.login-form .text-field:focused {
+    -fx-border-color: #8768e8;
+}
+
+.login-primary {
+    -fx-background-color: linear-gradient(to right, #7652d9, #9b6eea);
+    -fx-background-radius: 9;
+    -fx-padding: 13;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+
+.login-link {
+    -fx-background-color: transparent;
+    -fx-padding: 0 0 3 0;
+    -fx-text-fill: #7652d9;
+    -fx-cursor: hand;
+}
+
+#login-message {
+    -fx-font-size: 12px;
+    -fx-text-fill: #624ca7;
+}
+
+.login-note {
+    -fx-font-size: 11px;
+    -fx-text-fill: #8d96a9;
+}

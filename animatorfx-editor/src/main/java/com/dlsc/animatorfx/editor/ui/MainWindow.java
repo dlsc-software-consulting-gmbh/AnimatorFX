@@ -1,5 +1,11 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.ai.AiAnimation;
+import com.dlsc.animatorfx.editor.ai.AiCredentialStore;
+import com.dlsc.animatorfx.editor.ai.AiGenerationService;
+import com.dlsc.animatorfx.editor.ai.AiModelCatalog;
+import com.dlsc.animatorfx.editor.ai.AiProviderClient;
+import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.audio.SoundPreview;
 import com.dlsc.animatorfx.editor.audio.AudioImport;
 import com.dlsc.animatorfx.editor.video.VideoImport;
@@ -8,6 +14,7 @@ import com.dlsc.animatorfx.editor.canvas.tools.VideoTool;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.editor.inspector.sections.MotionPathSection;
 import com.dlsc.animatorfx.editor.session.RecoveryStore;
+import com.dlsc.animatorfx.editor.session.AppDirs;
 import com.dlsc.animatorfx.editor.session.SessionState.Layout;
 import com.dlsc.animatorfx.editor.session.SessionStore;
 import com.dlsc.animatorfx.editor.timeline.TimelineView;
@@ -39,8 +46,13 @@ import javafx.stage.StageStyle;
 import javafx.stage.WindowEvent;
 
 import java.io.File;
+import java.io.UncheckedIOException;
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * The main window in the motion-tool layout: window header with document tabs, playback toolbar, tool rail
@@ -67,6 +79,8 @@ public final class MainWindow {
     private final FileActions fileActions;
     private final ImportActions importActions;
     private final ExportActions exportActions;
+    private final AiActions aiActions;
+    private final AiPreferencesDialog aiPreferences;
     private final ToolBarView toolBar;
     private final ToolRail toolRail = new ToolRail();
     private final StatusBar statusBar = new StatusBar();
@@ -103,6 +117,13 @@ public final class MainWindow {
      * @param dialogs the dialogs of the file actions; {@code null} for the dialogs of the application
      */
     public MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs) {
+        this(stage, sessionStore, recoveryStore, dialogs,
+                provider -> new AiCredentialStore().get(provider), new AiModelCatalog()::listModels);
+    }
+
+    MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs,
+               Function<String, String> readAiKey,
+               BiFunction<AiProviderClient.Provider, String, CompletableFuture<List<String>>> listModels) {
         this.stage = stage;
         stage.initStyle(StageStyle.EXTENDED);
         Image icon = new Image(MainWindow.class.getResource(
@@ -112,6 +133,22 @@ public final class MainWindow {
         fileActions = new FileActions(workspace, this.dialogs, noticeBar, () -> stage);
         importActions = new ImportActions(workspace, noticeBar, this.dialogs, () -> stage);
         exportActions = new ExportActions(workspace, noticeBar, this.dialogs, () -> stage);
+        var aiSettings = AppDirs.configDir().resolve("ai.properties");
+        AiProviderClient aiClient = new AiProviderClient();
+        AiGenerationService generator = new AiGenerationService(aiSettings,
+                readAiKey,
+                (provider, model, key, prompt) -> aiClient.generate(provider, model, key, prompt, AiAnimation.schema()));
+        aiActions = new AiActions(dialogLayer, workspace, () -> {
+            try {
+                return AiSettings.load(aiSettings);
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+        }, generator::generate);
+        aiPreferences = new AiPreferencesDialog(dialogLayer, aiSettings,
+                (provider, key) -> new AiCredentialStore().put(provider, key),
+                provider -> new AiCredentialStore().delete(provider),
+                readAiKey, listModels);
         HeaderBarView header = new HeaderBarView(
                 new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme, icon, canvasView);
         HeaderBar.systemColorSchemeProperty(stage).bind(Bindings.when(theme.darkProperty())
@@ -206,7 +243,7 @@ public final class MainWindow {
         if (!session.shutdown()) {
             return false;
         }
-        runShutdownSteps(List.of(canvasView::dispose, theme::dispose));
+        runShutdownSteps(List.of(aiActions::dispose, canvasView::dispose, theme::dispose));
         return true;
     }
 
@@ -247,6 +284,14 @@ public final class MainWindow {
 
     public ExportActions getExportActions() {
         return exportActions;
+    }
+
+    void showAiGeneration() {
+        aiActions.generate();
+    }
+
+    void showAiPreferences() {
+        aiPreferences.show();
     }
 
     public Dialogs getDialogs() {

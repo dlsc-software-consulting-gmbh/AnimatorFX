@@ -63,8 +63,8 @@ import org.kordamp.ikonli.material2.Material2OutlinedMZ;
 
 /**
  * The left column of the timeline: a header with the timeline controls (auto-key, show all
- * properties, add marker, zoom), the strip beside the cue lane with the add-cue button and,
- * below them, one row per layer and per listed property.
+ * properties, follow selection, add marker, zoom), the strip beside the cue lane with the
+ * add-cue button and, below them, one row per layer and per listed property.
  *
  * <p>A layer row has a disclosure triangle (property rows and, for a group, its children), an
  * icon for the layer type, the name (double-click renames), and the visibility and lock toggles;
@@ -81,6 +81,7 @@ public final class LayerTreeColumn extends Region {
     public static final String RENAME_FIELD_ID = "layer-rename-field";
     public static final String AUTO_KEY_ID = "timeline-auto-key";
     public static final String SHOW_ALL_ID = "timeline-show-all";
+    public static final String FOLLOW_SELECTION_ID = "timeline-follow-selection";
     public static final String ADD_MARKER_ID = "timeline-add-marker";
     public static final String ADD_CUE_ID = "timeline-add-cue";
     public static final String ZOOM_IN_ID = "timeline-zoom-in";
@@ -104,6 +105,8 @@ public final class LayerTreeColumn extends Region {
             "Auto-key: changing a value adds a keyframe at the playhead");
     private final ToggleButton showAll = toggle(SHOW_ALL_ID, Material2AL.FORMAT_LIST_BULLETED,
             "Show all properties of expanded layers, not only the animated ones");
+    private final ToggleButton followSelection = toggle(FOLLOW_SELECTION_ID, Material2MZ.MY_LOCATION,
+            "Follow selection: scroll to the layers selected on the canvas");
     private final HBox header = new HBox();
     private final HBox cueHeader = new HBox();
     private final ContextMenu cueMenu = new ContextMenu();
@@ -128,6 +131,7 @@ public final class LayerTreeColumn extends Region {
         setFocusTraversable(true);
 
         autoKey.getStyleClass().add("auto-key");
+        followSelection.selectedProperty().bindBidirectional(timeline.followSelectionProperty());
         Button addMarker = button(ADD_MARKER_ID, Material2AL.BOOKMARK_BORDER, "Add a marker at the playhead");
         addMarker.setOnAction(e -> addMarker());
         Button zoomOut = button(ZOOM_OUT_ID, Material2MZ.REMOVE, "Zoom the timeline out");
@@ -139,7 +143,7 @@ public final class LayerTreeColumn extends Region {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         header.getStyleClass().add("timeline-header");
-        header.getChildren().addAll(autoKey, showAll, addMarker, spacer, zoomOut, zoomIn, fit);
+        header.getChildren().addAll(autoKey, showAll, followSelection, addMarker, spacer, zoomOut, zoomIn, fit);
 
         Label cueTitle = new Label("CUES");
         cueTitle.getStyleClass().add("cue-header-title");
@@ -299,7 +303,7 @@ public final class LayerTreeColumn extends Region {
                         body.getChildren().add(0, layerCells.get(layers));
                     }
                     LayerCell layerCell = layerCells.get(layers++);
-                    layerCell.show(layerRow, doc.getSelection().layerIds().contains(layerRow.layerId()));
+                    layerCell.show(layerRow, timeline.isHighlighted(layerRow.layerId()));
                     cell = layerCell;
                 } else {
                     if (properties == propertyCells.size()) {

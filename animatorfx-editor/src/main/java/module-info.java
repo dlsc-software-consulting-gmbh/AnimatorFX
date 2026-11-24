@@ -4,6 +4,13 @@ module com.dlsc.animatorfx.editor {
     requires com.dlsc.animatorfx.importer;
     requires javafx.controls;
     requires javafx.media;
+    requires java.net.http;
+    requires langchain4j.core;
+    requires langchain4j.http.client;
+    requires langchain4j.open.ai;
+    requires langchain4j.anthropic;
+    requires com.microsoft.credentialstorage;
+    requires org.slf4j.nop;
     // javax.sound.sampled: exact waveforms of WAV and AIFF files
     requires java.desktop;
     requires atlantafx.base;
@@ -13,6 +20,7 @@ module com.dlsc.animatorfx.editor {
     requires org.kordamp.ikonli.material2;
 
     exports com.dlsc.animatorfx.editor;
+    exports com.dlsc.animatorfx.editor.ai;
     exports com.dlsc.animatorfx.editor.audio;
     exports com.dlsc.animatorfx.editor.canvas;
     exports com.dlsc.animatorfx.editor.canvas.tools;

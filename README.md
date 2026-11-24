@@ -152,6 +152,13 @@ The sample application starts with its sound switched off with
 
 ### The sample application
 
+The **Interactive login demo** button opens a 1200×800 animation with real JavaFX form controls
+embedded in the `login-form` slot of `samples/animations/login.afx`. Sign in with
+`demo@example.com` and `animatorfx`, or try the simulated forgotten-password and reset flow.
+The demo sends no email, contacts no server, and keeps password changes only until its window
+closes. The animation can also be opened in the editor; the interactive form is supplied by the
+sample application.
+
 ![The sample application](docs/images/sample-app.png)
 
 `samples/animatorfx-sample-app` is a plain JavaFX window (Modena, no AtlantaFX) that depends on
@@ -183,6 +190,12 @@ anywhere else is shipped. The other samples are silent. To write the files again
 
 ```bash
 mvn -pl samples/animatorfx-sample-app test -Dtest=SampleFilesTest -Danimatorfx.samples.write=true
+```
+
+To regenerate the separate interactive login scene:
+
+```bash
+mvn -pl samples/animatorfx-sample-app test -Dtest=SampleFilesTest#loginSceneHasAStaggeredEntranceAndAnAmbientLoop -Danimatorfx.login.write=true
 ```
 
 ### Packaging
@@ -427,6 +440,21 @@ Tab stays within the dialog, Enter presses its default button, Escape cancels it
 returns to where it was afterwards. One dialog shows at a time: a request made meanwhile, such
 as a second *Close*, is ignored. Only *Open*, *Save As* and the import choosers are the file
 dialogs of the operating system.
+
+### AI-generated animations
+
+Choose *Edit ▸ AI Preferences…* to select OpenAI or Anthropic and save the provider's API key in
+the operating system's credential store. The model dropdowns load models available to each key;
+use *Refresh* after entering a new key, or type a model ID manually. Not every listed model
+supports structured animation generation. On Linux, a working Secret Service or GNOME Keyring is
+required; AnimatorFX does not fall back to storing keys in plain text. Leave a key field blank to
+keep its existing key, or select its removal checkbox.
+
+Choose *File ▸ Generate with AI…* and describe the animation. The dialog shows the selected
+provider and model; your description is sent to that provider and may incur charges. The result is
+validated and opens as a new, unsaved
+document containing editable vector layers and keyframes; it does not generate image, audio or
+video assets. Cancelling or failing a request leaves your existing documents unchanged.
 
 ### Tools and shortcuts
 

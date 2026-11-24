@@ -60,6 +60,36 @@ class InWindowDialogsTest {
 
     private final List<MainWindow> windows = new ArrayList<>();
 
+    @Test
+    void aiMenuEntriesOpenInWindowDialogs() {
+        String old = System.getProperty("animatorfx.configDir");
+        System.setProperty("animatorfx.configDir", dir.resolve("ai-config").toString());
+        try {
+            MainWindow window = fx(() -> {
+                MainWindow w = new MainWindow(new Stage(), new SessionStore(dir.resolve("config")),
+                        new RecoveryStore(dir.resolve("config").resolve("recovery")), null,
+                        provider -> { throw new IllegalStateException(); },
+                        (provider, key) -> java.util.concurrent.CompletableFuture.completedFuture(List.of()));
+                w.getStage().setWidth(1100);
+                w.getStage().setHeight(720);
+                w.show();
+                return w;
+            });
+            windows.add(window);
+            settle(window);
+            run(() -> window.menuItem("menu-file-ai-generate").fire());
+            settle(window);
+            assertNotNull(fx(() -> window.getScene().lookup("#ai-description")));
+            type(window, KeyCode.ESCAPE);
+            run(() -> window.menuItem("menu-edit-ai-preferences").fire());
+            settle(window);
+            assertNotNull(fx(() -> window.getScene().lookup("#ai-provider")));
+        } finally {
+            if (old == null) System.clearProperty("animatorfx.configDir");
+            else System.setProperty("animatorfx.configDir", old);
+        }
+    }
+
     @BeforeAll
     static void startToolkit() throws Exception {
         FxToolkit.registerPrimaryStage();

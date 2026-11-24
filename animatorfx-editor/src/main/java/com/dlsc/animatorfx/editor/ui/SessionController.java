@@ -149,6 +149,7 @@ public final class SessionController {
         placeWindow(state.window());
         window.applyLayout(state.layout());
         window.getToolBar().setMuted(state.audioMuted());
+        window.getTimelineView().setFollowSelection(state.followSelection());
         workspace.getRecentFiles().setAll(state.recentFiles());
 
         Set<String> seen = new HashSet<>();
@@ -201,6 +202,7 @@ public final class SessionController {
         stage.maximizedProperty().addListener(valueChanged);
         window.getTheme().modeProperty().addListener(valueChanged);
         window.getToolBar().mutedProperty().addListener(valueChanged);
+        window.getTimelineView().followSelectionProperty().addListener(valueChanged);
         window.setOnLayoutChanged(this::scheduleSave);
         workspace.getRecentFiles().addListener(changed);
         workspace.activeDocumentProperty().addListener((obs, oldDocument, newDocument) -> {
@@ -472,7 +474,8 @@ public final class SessionController {
         WindowState bounds = normalBounds == null ? null : new WindowState(normalBounds.x(), normalBounds.y(),
                 normalBounds.width(), normalBounds.height(), window.getStage().isMaximized(), screenIndex());
         return new SessionState(bounds, window.getLayoutState(), window.getTheme().getMode().name(), documents,
-                active == null ? null : active.getId(), workspace.getRecentFiles(), window.getToolBar().isMuted());
+                active == null ? null : active.getId(), workspace.getRecentFiles(), window.getToolBar().isMuted(),
+                window.getTimelineView().isFollowSelection());
     }
 
     private void scheduleSave() {
