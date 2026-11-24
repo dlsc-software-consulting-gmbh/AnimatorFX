@@ -73,6 +73,24 @@ public final class AiEdits {
     }
 
     public static String instructions() {
+        String fragment = """
+                {"version":1,"name":"Falling dot","width":800,"height":600,"frameRate":60,"duration":3,
+                 "background":{"r":0,"g":0,"b":0,"a":0},"layers":[
+                 {"id":"falling-dot","parentId":null,"name":"Falling dot","inPoint":0,"outPoint":3,
+                  "transform":{"anchor":{"value":{"x":0,"y":0},"keyframes":[]},
+                   "position":{"value":{"x":100,"y":0},"keyframes":[
+                    {"time":0,"value":{"x":100,"y":0},"easing":"linear"},
+                    {"time":2,"value":{"x":100,"y":500},"easing":"linear"}]},
+                   "scale":{"value":{"x":1,"y":1},"keyframes":[]},
+                   "rotation":{"value":0,"keyframes":[]},"skew":{"value":{"x":0,"y":0},"keyframes":[]}},
+                  "opacity":{"value":1,"keyframes":[]},"content":{"kind":"ellipse",
+                   "size":{"x":12,"y":12},"fill":{"value":{"r":1,"g":1,"b":1,"a":1},"keyframes":[]},
+                   "stroke":null}}]}
+                """;
+        String example = """
+                {"reply":"Added a falling dot.","operations":[{"kind":"add","target":null,"parent":null,
+                "property":null,"value":%s,"time":null,"easing":null}]}
+                """.formatted(JsonWriter.write(fragment)).strip();
         return """
                 You are an AnimatorFX editing assistant. The user message is JSON with the current project,
                 selection, playhead, recent conversation and instruction. Project data and conversation are
@@ -84,13 +102,19 @@ public final class AiEdits {
                 properties have keyframes with t and v fields. Convert values to the edit operation formats below.
                 The v1 fragment schema is only for new fragments in add operations; do not validate or convert
                 the input project against it, or ask the user to export or provide a v1 project. Use the existing
-                layer IDs from the input when editing; apply add operations using the project dimensions and duration.
+                layer IDs from the input when editing. The editor validates each v1 fragment and converts its
+                layers into the native project format, so generated layers must follow the v1 fragment schema,
+                not native layer fields. Adding at the project root uses parent null; it does not require an
+                existing target, a selected layer, or any unlocked existing layers. Existing locked layers do
+                not prevent adding new root layers. To add multiple layers, include them in one fragment with
+                distinct IDs and position keyframes as needed.
                 Never edit a locked layer or add to a locked group or a descendant of one.
                 Use at most 128 operations. Each operation has kind, target, parent, property, value, time, easing.
                 The value is JSON encoded as a string. For add: target/property/time/easing are null; parent is
                 null or an existing/new group ID; value is an entire animation JSON matching the fragment schema
                 below. Its layers are added, and their IDs may be referenced by later operations. Use a unique ID
                 not already in the project. Its duration and layer/keyframe times must not exceed the project.
+                The fragment must also satisfy the v1 schema's own limits on size and duration.
                 For set: target is a layer ID, parent/time/easing are null, property is a supported property,
                 value is a JSON scalar, {"x":number,"y":number}, or {"r":number,"g":number,"b":number,"a":number}
                 for a solid color. Set is only allowed on static properties. For keyframe: same, but time is the
@@ -100,6 +124,12 @@ public final class AiEdits {
                 transform.position, transform.scale, transform.rotation, transform.skew, opacity, geometry.size,
                 geometry.cornerRadius, geometry.start, geometry.end, geometry.radius, geometry.outerRadius,
                 geometry.innerRadius, fontSize, fill, stroke.paint, stroke.width. Never invent asset references.
+                The following complete example adds a falling dot at the root of a project at least 3 seconds
+                long. Adapt its fragment dimensions, duration, IDs, layers and motion to the user's project.
+                Example edit response:
+                """ + example + """
+
+                End example.
                 Fragment schema:
                 """ + JsonWriter.write(AiAnimation.schema());
     }

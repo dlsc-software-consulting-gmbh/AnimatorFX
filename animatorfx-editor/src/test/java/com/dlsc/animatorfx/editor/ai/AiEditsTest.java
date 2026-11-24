@@ -11,6 +11,7 @@ import com.dlsc.animatorfx.model.Paint;
 import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.Vec2;
+import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 import org.junit.jupiter.api.Test;
 
@@ -94,6 +95,40 @@ class AiEditsTest {
 
     @Test
     void providedExampleAddsAnAnimatedLayerEvenWhenExistingLayersAreLocked() throws Exception {
+        Animation before = scene();
+        var existing = before.layers().getFirst().withBase(before.layers().getFirst().base().withLocked(true));
+        before = before.withLayers(List.of(existing));
+        Animation after = AiEdits.parse(example(), before).animation();
+        assertEquals(2, after.layers().size());
+        assertEquals(existing, after.layers().getFirst());
+        var added = after.layers().getLast();
+        assertInstanceOf(ShapeLayer.class, added);
+        assertTrue(added.base().transform().position().isAnimated());
+        assertNotEquals(added.base().transform().position().at(0), added.base().transform().position().at(2));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void exampleCanBeExtendedToThirtyAnimatedLayersInOneAdd() throws Exception {
+        var response = (Map<String, Object>) Json.parse(example());
+        var operation = (Map<String, Object>) ((List<?>) response.get("operations")).getFirst();
+        var fragment = (Map<String, Object>) Json.parse((String) operation.get("value"));
+        var firstLayer = ((List<?>) fragment.get("layers")).getFirst();
+        var layers = new java.util.ArrayList<Map<String, Object>>();
+        for (int i = 0; i < 30; i++) {
+            var layer = (Map<String, Object>) Json.parse(JsonWriter.write(firstLayer));
+            layer.put("id", "flake-" + i);
+            layers.add(layer);
+        }
+        fragment.put("layers", layers);
+        operation.put("value", JsonWriter.write(fragment));
+        Animation after = AiEdits.parse(JsonWriter.write(response), scene()).animation();
+        assertEquals(31, after.layers().size());
+        assertTrue(after.layers().subList(1, 31).stream()
+                .allMatch(layer -> layer.base().transform().position().isAnimated()));
+    }
+
+    private static String example() {
         String instructions = AiEdits.instructions();
         String startMarker = "Example edit response:\n";
         String endMarker = "\nEnd example.";
@@ -102,16 +137,7 @@ class AiEditsTest {
         start += startMarker.length();
         int end = instructions.indexOf(endMarker, start);
         assertTrue(end > start, "The example edit response must be delimited");
-        Animation before = scene();
-        var existing = before.layers().getFirst().withBase(before.layers().getFirst().base().withLocked(true));
-        before = before.withLayers(List.of(existing));
-        Animation after = AiEdits.parse(instructions.substring(start, end), before).animation();
-        assertEquals(2, after.layers().size());
-        assertEquals(existing, after.layers().getFirst());
-        var added = after.layers().getLast();
-        assertInstanceOf(ShapeLayer.class, added);
-        assertTrue(added.base().transform().position().isAnimated());
-        assertNotEquals(added.base().transform().position().at(0), added.base().transform().position().at(2));
+        return instructions.substring(start, end);
     }
 
     private static String fragment() {
