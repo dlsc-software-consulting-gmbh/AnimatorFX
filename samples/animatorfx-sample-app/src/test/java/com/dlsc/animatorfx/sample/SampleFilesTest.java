@@ -80,6 +80,32 @@ class SampleFilesTest {
         return AnimationIO.read(DIRECTORY.resolve(name + ".afx")).animation();
     }
 
+    @Test
+    void winterTownIsAnEditableLoopWithMovingSceneElements() throws IOException {
+        if (Boolean.getBoolean("animatorfx.winter.write")) {
+            WinterTownGenerator.write(DIRECTORY.resolve("winter-town.afx"));
+        }
+        assertTrue(Files.exists(DIRECTORY.resolve("winter-town.afx")), "winter-town sample is missing");
+        Animation animation = committed("winter-town");
+        assertEquals(WinterTownGenerator.create().animation(), animation);
+        assertEquals(1200, animation.width());
+        assertEquals(800, animation.height());
+        assertEquals(20, animation.duration());
+        assertTrue(Layers.flatten(animation).size() > 80);
+        Frame start = Evaluator.sample(animation, 0);
+        Frame middle = Evaluator.sample(animation, 10);
+        Frame end = Evaluator.sample(animation, 20);
+        for (String id : List.of("winter-car", "winter-snow-0", "winter-character-1", "winter-cloud")) {
+            assertNotEquals(start.get(id).position(), middle.get(id).position(), id);
+            assertEquals(start.get(id).position(), end.get(id).position(), id);
+        }
+        assertNotNull(Layers.find(animation, "winter-cloud").orElseThrow().base().motionPath());
+        assertNotNull(Layers.find(animation, "winter-house-a-shine").orElseThrow().base().mask());
+        assertNotEquals(start.get("winter-character-1-arm-b").rotation(),
+                middle.get("winter-character-1-arm-b").rotation());
+        assertTrue(Evaluator.sample(animation, 2.12).get("winter-character-1-eye-a").scale().y() < .1);
+    }
+
     @ParameterizedTest
     @MethodSource("names")
     void theCommittedFileIsWhatTheGeneratorProduces(String name) throws IOException {
