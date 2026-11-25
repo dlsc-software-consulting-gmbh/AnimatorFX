@@ -4,10 +4,12 @@ import com.dlsc.animatorfx.model.io.AnimationFile;
 
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
+import java.util.function.Consumer;
 
 /** Coordinates credential lookup, a provider request and validation away from the UI thread. */
 public final class AiGenerationService {
@@ -26,16 +28,39 @@ public final class AiGenerationService {
     private final Function<String, String> readKey;
     private final Request request;
     private final Executor executor;
+    private final AiReviewRequest review;
+    private final Function<AnimationFile, CompletableFuture<List<byte[]>>> render;
+    private final Consumer<String> activity;
 
     public AiGenerationService(Path settingsFile, Function<String, String> readKey, Request request) {
-        this(settingsFile, readKey, request, ForkJoinPool.commonPool());
+        this(settingsFile, readKey, request, null, AiPreviewFrames::render, ignored -> {}, ForkJoinPool.commonPool());
+    }
+
+    public AiGenerationService(Path settingsFile, Function<String, String> readKey, Request request,
+                               AiReviewRequest review, Consumer<String> activity) {
+        this(settingsFile, readKey, request, review, AiPreviewFrames::render, activity, ForkJoinPool.commonPool());
+    }
+
+    AiGenerationService(Path settingsFile, Function<String, String> readKey, Request request,
+                        AiReviewRequest review, Function<AnimationFile, CompletableFuture<List<byte[]>>> render,
+                        Consumer<String> activity) {
+        this(settingsFile, readKey, request, review, render, activity, ForkJoinPool.commonPool());
     }
 
     AiGenerationService(Path settingsFile, Function<String, String> readKey, Request request, Executor executor) {
+        this(settingsFile, readKey, request, null, AiPreviewFrames::render, ignored -> {}, executor);
+    }
+
+    private AiGenerationService(Path settingsFile, Function<String, String> readKey, Request request,
+                                AiReviewRequest review, Function<AnimationFile, CompletableFuture<List<byte[]>>> render,
+                                Consumer<String> activity, Executor executor) {
         this.settingsFile = settingsFile;
         this.readKey = readKey;
         this.request = request;
         this.executor = executor;
+        this.review = review;
+        this.render = render;
+        this.activity = activity;
     }
 
     public CompletableFuture<AnimationFile> generate(String prompt) {
@@ -47,10 +72,13 @@ public final class AiGenerationService {
     }
 
     private CompletableFuture<AnimationFile> generateWithSettings(String prompt, AiSettings selection) {
+        if (prompt == null || prompt.isBlank() || prompt.length() > 8000) {
+            return CompletableFuture.failedFuture(new Failure("Enter a description of at most 8,000 characters."));
+        }
         CompletableFuture<AnimationFile> result = new CompletableFuture<>();
         Object lock = new Object();
         @SuppressWarnings("unchecked")
-        CompletableFuture<String>[] running = new CompletableFuture[1];
+        CompletableFuture<?>[] running = new CompletableFuture[1];
         result.whenComplete((file, failure) -> {
             if (result.isCancelled()) {
                 synchronized (lock) {
@@ -67,11 +95,27 @@ public final class AiGenerationService {
                             "No API key is available. Add one in AI Preferences and check your credential store."));
                     return;
                 }
-                CompletableFuture<String> sent;
+                CompletableFuture<AnimationFile> sent;
                 try {
                     synchronized (lock) {
                         if (result.isDone()) return;
-                        sent = request.send(settings.provider(), settings.model(), key, prompt);
+                        sent = AiRepair.run(prompt,
+                                input -> request.send(settings.provider(), settings.model(), key, input),
+                                json -> {
+                                    try {
+                                        return AiAnimation.parse(json);
+                                    } catch (Exception | StackOverflowError ex) {
+                                        throw new Failure("The provider returned an invalid animation: "
+                                                + AiErrors.sanitize(ex.getMessage() == null
+                                                ? ex.getClass().getSimpleName() : ex.getMessage(), key, prompt));
+                                    }
+                                }, (json, error) -> {
+                                    String previous = json == null ? "" : json;
+                                    if (previous.length() > 120_000) previous = previous.substring(0, 120_000);
+                                    return "Original request:\n" + prompt + "\nThe previous response was invalid: "
+                                            + error.getMessage() + "\nCorrect this response and return the complete animation:\n"
+                                            + previous;
+                                });
                         running[0] = sent;
                     }
                 } catch (RuntimeException ex) {
@@ -79,18 +123,23 @@ public final class AiGenerationService {
                             + AiErrors.sanitize(AiErrors.message(ex), key, prompt)));
                     return;
                 }
-                sent.whenComplete((json, failure) -> {
+                sent.whenComplete((file, failure) -> {
                     if (failure != null) {
-                        result.completeExceptionally(new Failure("The provider request failed: "
+                        result.completeExceptionally(failure instanceof Failure ? failure
+                                : new Failure("The provider request failed: "
                                 + AiErrors.sanitize(AiErrors.message(failure), key, prompt)));
-                    } else if (!result.isDone()) {
-                        try {
-                            result.complete(AiAnimation.parse(json));
-                        } catch (Exception ex) {
-                            result.completeExceptionally(new Failure("The provider returned an invalid animation: "
-                                    + AiErrors.sanitize(ex.getMessage() == null ? ex.getClass().getSimpleName()
-                                    : ex.getMessage(), key, prompt)));
+                    } else {
+                        CompletableFuture<AiEdits.Result> refined;
+                        synchronized (lock) {
+                            if (result.isDone()) return;
+                            refined = AiVisualReview.refine(new AiEdits.Result("", file.animation()), file,
+                                    settings, key, List.of(), 0, List.of(), prompt, review, render, activity);
+                            running[0] = refined;
                         }
+                        refined.whenComplete((edit, error) -> {
+                            if (error != null) result.completeExceptionally(error);
+                            else result.complete(new AnimationFile(edit.animation(), file.assets()));
+                        });
                     }
                 });
             } catch (Exception | LinkageError ex) {

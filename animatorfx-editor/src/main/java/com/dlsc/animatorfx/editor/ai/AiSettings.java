@@ -9,7 +9,12 @@ import java.util.Objects;
 import java.util.Properties;
 
 /** Non-secret AI preferences. API keys are stored separately in the operating system. */
-public record AiSettings(AiProviderClient.Provider provider, String openAiModel, String anthropicModel) {
+public record AiSettings(AiProviderClient.Provider provider, String openAiModel, String anthropicModel,
+                         boolean visualReview) {
+
+    public AiSettings(AiProviderClient.Provider provider, String openAiModel, String anthropicModel) {
+        this(provider, openAiModel, anthropicModel, false);
+    }
 
     public AiSettings {
         Objects.requireNonNull(provider);
@@ -37,7 +42,8 @@ public record AiSettings(AiProviderClient.Provider provider, String openAiModel,
         try {
             return new AiSettings(AiProviderClient.Provider.valueOf(properties.getProperty("provider", defaults.provider.name())),
                     properties.getProperty("openai.model", defaults.openAiModel),
-                    properties.getProperty("anthropic.model", defaults.anthropicModel));
+                    properties.getProperty("anthropic.model", defaults.anthropicModel),
+                    Boolean.parseBoolean(properties.getProperty("visual.review", "false")));
         } catch (IllegalArgumentException ex) {
             throw new IOException("Invalid AI preferences.", ex);
         }
@@ -48,6 +54,7 @@ public record AiSettings(AiProviderClient.Provider provider, String openAiModel,
         properties.setProperty("provider", provider.name());
         properties.setProperty("openai.model", openAiModel);
         properties.setProperty("anthropic.model", anthropicModel);
+        properties.setProperty("visual.review", Boolean.toString(visualReview));
         Path parent = path.toAbsolutePath().getParent();
         Files.createDirectories(parent);
         try (OutputStream output = Files.newOutputStream(path)) {

@@ -467,6 +467,16 @@ drop-shadow color, radius, offsets and spread. Adjustments apply immediately as 
 changes. Controls follow the current project and become unavailable when their target is locked,
 removed or no longer safely identifiable. Complex paths remain editable on the canvas.
 
+Generation and chat can repair invalid AI responses twice before reporting a failure. Chat also supports
+renaming, duplicating and reordering layers and cubic-bezier keyframes. Changes are validated before
+application; a chat request remains one undo step.
+
+In AI Preferences, **visual review** is optional and disabled by default. When enabled, the application
+renders three small frames of a validated candidate and sends them to a vision-capable model for one
+possible refinement. These frames may reveal embedded project content and incur additional charges.
+There are at most four provider calls per interaction. If visual review fails, is unsupported, or the
+project contains video layers, the validated candidate is retained and the Activity tab reports the skip.
+
 The project structure (including layer names and text), selection, playhead and recent conversation
 are sent to the selected provider and may incur charges. Embedded media and local asset paths are
 not sent. Conversations are kept in memory per open document and can be cleared in *Chat*.
@@ -476,6 +486,51 @@ content and API keys are not intentionally recorded there.
 AI provider requests and responses are also logged to the application terminal, including prompts
 and project content. The configured API key is redacted and HTTP headers are not logged; treat
 terminal logs as private.
+
+#### On-demand model quality evaluation
+
+The test-scope `AiQualityEvaluation` main class compares explicitly chosen models using the real
+generation service, its validation/repair policy, and four synthetic prompts (bounce, seamless
+loader, staged text/card, Bezier orbit). **Only the explicit main-class invocation below makes
+API calls; normal tests/builds do not.** With JDK 27, from the repository root:
+
+```bash
+./mvnw -pl animatorfx-editor -am install -DskipTests
+./mvnw -pl animatorfx-editor org.codehaus.mojo:exec-maven-plugin:3.7.0:java \
+  -Dexec.classpathScope=test \
+  -Dexec.mainClass=com.dlsc.animatorfx.editor.ai.AiQualityEvaluation \
+  '-Dexec.args=--provider OPENAI --model MODEL_A --model MODEL_B --output /absolute/review-dir'
+```
+
+Replace model IDs and destination; repeat `--model` as needed. For Anthropic, use
+`--provider ANTHROPIC`. Set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` securely in the environment,
+or save the selected provider's key through AI Preferences (environment takes precedence).
+There is no key argument or key file; documents echoing the configured key are withheld
+(`sensitive_output`). **Billable/private:** each model runs four requests,
+potentially three generation attempts per prompt plus SDK/network retries; prompts and generated
+content go to that provider and may appear in redacted-key terminal traffic logs. No current
+project or assets are read. Check provider pricing/data policies before running.
+
+Each invocation creates a new `quality-*` subdirectory; exclusive, index-based `.afx` filenames
+never overwrite existing files or incorporate model/provider-generated names. Open successful
+files in AnimatorFX for editable review. `results.jsonl` maps filenames to model and full prompt,
+validation (`passed` / `not_passed`), status, service-request count (`providerCalls`) and end-to-end
+generation latency in milliseconds (includes repairs/validation, excludes disk writes).
+`not_passed` includes unavailable responses, not just malformed output. Failures are recorded
+without raw error text and remaining cases continue; each case has a six-minute timeout.
+Main-class failure status 1 means failed cases; 2 means setup/report failure. Interruption stops
+the run; the report retains completed rows. Visual AI review is disabled for this comparison.
+
+**Human rubric:** hide model names while reviewing; score each dimension 0 (missing/broken),
+1 (major issues), 2 (minor issues), 3 (polished). Check (1) prompt fidelity and timing,
+(2) composition, contrast and readable text, (3) smooth motion and believable bounce/contact,
+(4) loop seams or staged entrance/final hold as appropriate, and (5) editable layers/groups and
+usable keyframes. Play at normal speed and scrub start/middle/end and contact/seam frames.
+Record scores beside the model/prompt rows; a schema pass is not proof of visual quality.
+This is a small, nondeterministic manual benchmark, not an automated quality ranking or cost meter.
+
+Offline regression tests: `./mvnw -pl animatorfx-editor -am test -Dtest=AiQualityEvaluationTest -Dsurefire.failIfNoSpecifiedTests=false`
+(fake transport/credentials and temporary output only).
 
 ### Tools and shortcuts
 

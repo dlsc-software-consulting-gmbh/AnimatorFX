@@ -85,6 +85,11 @@ final class AiPreferencesDialog {
         explanation.setWrapText(true);
         Label compatibility = new Label("Some listed models may not support structured animation generation.");
         compatibility.setWrapText(true);
+        CheckBox visualReview = new CheckBox("Enable AI visual review. Rendered frames may include embedded content "
+                + "sent to the provider and may incur extra costs.");
+        visualReview.setId("ai-visual-review");
+        visualReview.setWrapText(true);
+        visualReview.setSelected(settings.visualReview());
         VBox openAiFields = new VBox(8, new Label("OpenAI model"), openAiModel.row, openAiModel.status,
                 new Label("OpenAI API key"), openAiKey, removeOpenAi);
         VBox anthropicFields = new VBox(8, new Label("Anthropic model"), anthropicModel.row, anthropicModel.status,
@@ -94,7 +99,7 @@ final class AiPreferencesDialog {
         anthropicFields.visibleProperty().bind(provider.valueProperty().isEqualTo(Provider.ANTHROPIC));
         anthropicFields.managedProperty().bind(anthropicFields.visibleProperty());
         VBox content = new VBox(8, explanation, new Label("Provider"), provider,
-                compatibility, openAiFields, anthropicFields);
+                compatibility, openAiFields, anthropicFields, visualReview);
         ScrollPane scroll = new ScrollPane(content);
         scroll.setFitToWidth(true);
         scroll.setPrefViewportHeight(300);
@@ -110,7 +115,7 @@ final class AiPreferencesDialog {
             AiSettings updated;
             try {
                 updated = new AiSettings(provider.getValue(), openAiModel.model.getEditor().getText().trim(),
-                        anthropicModel.model.getEditor().getText().trim());
+                        anthropicModel.model.getEditor().getText().trim(), visualReview.isSelected());
             } catch (RuntimeException ex) {
                 Platform.runLater(() -> error("Enter a model name for each provider."));
                 return;

@@ -7,6 +7,7 @@ import javafx.scene.Scene;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.Label;
@@ -63,6 +64,12 @@ class AiPreferencesDialogTest {
                 ComboBox<?> anthropic = (ComboBox<?>) scene.lookup("#ai-anthropic-model");
                 PasswordField openAiKey = (PasswordField) scene.lookup("#ai-openai-key");
                 PasswordField anthropicKey = (PasswordField) scene.lookup("#ai-anthropic-key");
+                CheckBox visualReview = (CheckBox) scene.lookup("#ai-visual-review");
+                assertFalse(visualReview.isSelected());
+                assertTrue(visualReview.getText().contains("embedded content"));
+                assertTrue(visualReview.getText().contains("provider"));
+                assertTrue(visualReview.getText().contains("cost"));
+                visualReview.setSelected(true);
                 assertTrue(showing(openAi));
                 assertTrue(showing(openAiKey));
                 assertFalse(showing(anthropic));
@@ -93,6 +100,7 @@ class AiPreferencesDialogTest {
             assertEquals(Provider.ANTHROPIC, settings.provider());
             assertEquals("edited-openai", settings.openAiModel());
             assertEquals("edited-anthropic", settings.anthropicModel());
+            assertTrue(settings.visualReview());
             assertEquals("openai-test-key", savedKeys.get("OPENAI"));
             assertEquals("anthropic-test-key", savedKeys.get("ANTHROPIC"));
         } finally {
@@ -150,7 +158,7 @@ class AiPreferencesDialogTest {
     @Test
     void loadsBothProvidersAndKeepsTheSavedCustomSelections(@TempDir Path directory) throws Exception {
         Path file = directory.resolve("settings.properties");
-        new AiSettings(Provider.ANTHROPIC, "custom-openai", "custom-claude").save(file);
+        new AiSettings(Provider.ANTHROPIC, "custom-openai", "custom-claude", true).save(file);
         Stage stage = fx(() -> {
             DialogLayer layer = new DialogLayer();
             Stage s = new Stage();
@@ -178,6 +186,7 @@ class AiPreferencesDialogTest {
                 ComboBox<?> anthropic = (ComboBox<?>) stage.getScene().lookup("#ai-anthropic-model");
                 assertEquals("custom-openai", openAi.getEditor().getText());
                 assertEquals("custom-claude", anthropic.getEditor().getText());
+                assertTrue(((CheckBox) stage.getScene().lookup("#ai-visual-review")).isSelected());
                 assertFalse(showing(openAi));
                 assertTrue(showing(anthropic));
                 return null;

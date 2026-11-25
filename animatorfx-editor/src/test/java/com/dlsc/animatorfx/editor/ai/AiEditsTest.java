@@ -3,11 +3,14 @@ package com.dlsc.animatorfx.editor.ai;
 import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
+import com.dlsc.animatorfx.model.AudioLayer;
 import com.dlsc.animatorfx.model.Effect;
+import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Geometry;
 import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.LayerBase;
 import com.dlsc.animatorfx.model.LayerProperties;
+import com.dlsc.animatorfx.model.Mask;
 import com.dlsc.animatorfx.model.Paint;
 import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
@@ -216,6 +219,164 @@ class AiEditsTest {
         assertThrows(Exception.class, () -> AiEdits.parse("{\"reply\":\"a\",\"reply\":\"b\",\"operations\":[]}", scene()));
         assertThrows(Exception.class, () -> AiEdits.parse(response(List.of(
                 operation("set", "ball", "opacity", "3", null))), scene()));
+    }
+
+    @Test
+    void renamesAndReordersWithinTheSameParent() throws Exception {
+        var first = scene().layers().getFirst();
+        var second = first.withBase(first.base().withId("second").withName("Second"));
+        Animation before = scene().withLayers(List.of(first, second));
+        Animation after = AiEdits.parse(response(List.of(
+                operation("rename", "ball", null, "\"Renamed\"", null),
+                operation("reorder", "ball", null, "1", null))), before).animation();
+        assertEquals(List.of("second", "ball"), after.layers().stream().map(layer -> layer.id()).toList());
+        assertEquals("Renamed", after.layers().getLast().base().name());
+        assertEquals(second, after.layers().getFirst());
+        assertEquals("Ball", before.layers().getFirst().base().name());
+    }
+
+    @Test
+    void duplicatesWithFreshIdsAndPreservesAnimationAndEffects() throws Exception {
+        var original = scene().layers().getFirst();
+        var animated = Animatable.of(1.0).withKeyframe(1, 0.5, Easing.LINEAR);
+        var effect = new Effect.Blur(Animatable.of(3.0).withKeyframe(1, 5.0, Easing.HOLD));
+        original = original.withBase(original.base().withOpacity(animated).withEffects(List.of(effect)));
+        Animation before = scene().withLayers(List.of(original));
+        Animation after = AiEdits.parse(response(List.of(
+                operation("duplicate", "ball", null, "\"copy\"", null),
+                operation("rename", "copy", null, "\"Copy\"", null))), before).animation();
+        var copy = after.layers().getLast();
+        assertEquals(original, after.layers().getFirst());
+        assertNotEquals(original.id(), copy.id());
+        assertEquals("Copy", copy.base().name());
+        assertEquals(0.5, copy.base().opacity().at(1));
+        assertNotEquals(original.base().opacity().keyframes().getFirst().id(),
+                copy.base().opacity().keyframes().getFirst().id());
+        assertEquals(5.0, ((Effect.Blur) copy.base().effects().getFirst()).radius().at(1));
+        assertNotEquals(effect.radius().keyframes().getFirst().id(),
+                ((Effect.Blur) copy.base().effects().getFirst()).radius().keyframes().getFirst().id());
+    }
+
+    @Test
+    void rejectsUnsafeLayerOperationsAtomically() {
+        var locked = scene().layers().getFirst().withBase(scene().layers().getFirst().base().withLocked(true));
+        var group = new GroupLayer(LayerBase.create("Group", 3).withId("group"), List.of(locked));
+        Animation before = scene().withLayers(List.of(group));
+        for (var edit : List.of(
+                operation("rename", "ball", null, "\"No\"", null),
+                operation("duplicate", "group", null, "\"copy\"", null),
+                operation("reorder", "group", null, "1", null),
+                operation("duplicate", "group", null, "\"ball\"", null),
+                operation("rename", "group", null, "\"\"", null))) {
+            assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(
+                    operation("rename", "group", null, "\"Changed\"", null), edit)), before));
+        }
+        assertEquals("Group", before.layers().getFirst().base().name());
+        Animation lockedAncestor = before.withLayers(List.of(
+                new GroupLayer(group.base().withLocked(true), List.of(scene().layers().getFirst()))));
+        for (String kind : List.of("rename", "duplicate", "reorder")) {
+            String value = kind.equals("reorder") ? "0" : "\"copy\"";
+            assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(
+                    operation(kind, "ball", null, value, null))), lockedAncestor));
+        }
+    }
+
+    @Test
+    void keyframesSupportCubicBezierAndRejectInvalidControlPoints() throws Exception {
+        var edit = operation("keyframe", "ball", "opacity", "0.5", 1.0);
+        edit.put("easing", "[0.25,-0.5,0.75,1.5]");
+        Animation after = AiEdits.parse(response(List.of(edit)), scene()).animation();
+        assertEquals(new Easing.CubicBezier(0.25, -0.5, 0.75, 1.5),
+                after.layers().getFirst().base().opacity().keyframes().getFirst().easing());
+        edit.put("easing", "[1.1,0,0.5,1]");
+        assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(edit)), scene()));
+    }
+
+    @Test
+    void duplicatesAudioWithFreshIdsForAnimatedBaseProperties() throws Exception {
+        var audio = AudioLayer.create("Audio", "sound", 0, 3);
+        var blur = new Effect.Blur(Animatable.of(1.0).withKeyframe(1, 3.0, Easing.HOLD));
+        audio = audio.withBase(audio.base().withOpacity(Animatable.of(1.0).withKeyframe(1, 0.5, Easing.LINEAR))
+                .withEffects(List.of(blur)));
+        Animation before = scene().withLayers(List.of(audio))
+                .withAssets(List.of(new Asset("sound", Asset.Kind.AUDIO, "sound.wav", "Sound")));
+        var after = AiEdits.parse(response(List.of(
+                operation("duplicate", audio.id(), null, "\"copy\"", null))), before).animation();
+        var copy = after.layers().getLast();
+        assertEquals(0.5, copy.base().opacity().at(1));
+        assertNotEquals(audio.base().opacity().keyframes().getFirst().id(),
+                copy.base().opacity().keyframes().getFirst().id());
+        assertEquals(3.0, ((Effect.Blur) copy.base().effects().getFirst()).radius().at(1));
+        assertNotEquals(blur.radius().keyframes().getFirst().id(),
+                ((Effect.Blur) copy.base().effects().getFirst()).radius().keyframes().getFirst().id());
+    }
+
+    @Test
+    void duplicatePreservesExternalMaskAndRemapsInternalMasks() throws Exception {
+        var mask = scene().layers().getFirst().withBase(scene().layers().getFirst().base().withId("mask"));
+        var masked = scene().layers().getFirst().withBase(scene().layers().getFirst().base()
+                .withMask(new Mask("mask", Mask.Mode.ALPHA)));
+        Animation before = scene().withLayers(List.of(mask, masked));
+        Animation after = AiEdits.parse(response(List.of(
+                operation("duplicate", "ball", null, "\"copy\"", null))), before).animation();
+        assertEquals(masked.base().mask(), after.layers().getLast().base().mask());
+        var group = new GroupLayer(LayerBase.create("Group", 3).withId("group"), List.of(mask, masked));
+        after = AiEdits.parse(response(List.of(
+                operation("duplicate", "group", null, "\"group-copy\"", null))),
+                scene().withLayers(List.of(group))).animation();
+        var copied = (GroupLayer) after.layers().getLast();
+        assertEquals(copied.children().getFirst().id(), copied.children().getLast().base().mask().layerId());
+        assertNotEquals("mask", copied.children().getFirst().id());
+    }
+
+    @Test
+    void reordersNestedSiblingsAndRejectsCrossingLockedLayersOrInvalidIndices() throws Exception {
+        var ball = scene().layers().getFirst();
+        var other = ball.withBase(ball.base().withId("other"));
+        var group = new GroupLayer(LayerBase.create("Group", 3).withId("group"), List.of(ball, other));
+        Animation before = scene().withLayers(List.of(group));
+        var reordered = (GroupLayer) AiEdits.parse(response(List.of(
+                operation("reorder", "ball", null, "1", null))), before).animation().layers().getFirst();
+        assertEquals(List.of("other", "ball"), reordered.children().stream().map(layer -> layer.id()).toList());
+        var locked = other.withBase(other.base().withLocked(true));
+        Animation lockedProject = before.withLayers(List.of(group.withChildren(List.of(ball, locked))));
+        assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(
+                operation("reorder", "ball", null, "1", null))), lockedProject));
+        for (String invalid : List.of("-1", "2", "0.5", "\"1\"")) {
+            assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(
+                    operation("reorder", "ball", null, invalid, null))), before));
+        }
+    }
+
+    @Test
+    void duplicateAliasesCannotShadowExistingLayersOrEarlierAliases() {
+        Animation before = scene();
+        assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(
+                operation("duplicate", "ball", null, "\"ball\"", null))), before));
+        assertThrows(IllegalArgumentException.class, () -> AiEdits.parse(response(List.of(
+                operation("duplicate", "ball", null, "\"copy\"", null),
+                operation("duplicate", "ball", null, "\"copy\"", null))), before));
+        assertEquals(1, before.layers().size());
+    }
+
+    @Test
+    void cubicBezierUpdatesOneKeyWithoutLosingOtherKeys() throws Exception {
+        var layer = scene().layers().getFirst();
+        var track = Animatable.of(1.0).withKeyframe(0, 0.1, Easing.LINEAR)
+                .withKeyframe(2, 0.9, Easing.HOLD);
+        layer = layer.withBase(layer.base().withOpacity(track));
+        var edit = operation("keyframe", "ball", "opacity", "0.5", 0.0);
+        edit.put("easing", "[0,0,1,1]");
+        var updated = AiEdits.parse(response(List.of(edit)),
+                scene().withLayers(List.of(layer))).animation().layers().getFirst().base().opacity();
+        assertEquals(2, updated.keyframes().size());
+        assertEquals(track.keyframes().getFirst().id(), updated.keyframes().getFirst().id());
+        assertEquals(track.keyframes().getLast(), updated.keyframes().getLast());
+        assertEquals(new Easing.CubicBezier(0, 0, 1, 1), updated.keyframes().getFirst().easing());
+        for (String invalid : List.of("[0,1,2]", "[0,1,-0.1,1]", "[0,\"x\",1,1]", "ease")) {
+            edit.put("easing", invalid);
+            assertThrows(Exception.class, () -> AiEdits.parse(response(List.of(edit)), scene()));
+        }
     }
 
     @Test

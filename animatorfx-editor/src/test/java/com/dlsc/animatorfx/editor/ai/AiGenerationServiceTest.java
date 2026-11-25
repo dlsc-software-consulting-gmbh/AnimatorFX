@@ -14,6 +14,95 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AiGenerationServiceTest {
     @Test
+    void optInVisualReviewReceivesTheGeneratedCandidate(@TempDir Path directory) throws Exception {
+        String json = """
+                {"version":1,"name":"Mock","width":320,"height":240,"frameRate":30,"duration":1,
+                 "background":{"r":0,"g":0,"b":0,"a":0},"layers":[]}
+                """;
+        var reviewed = new AtomicBoolean();
+        AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), provider -> "test-key",
+                (provider, model, key, prompt) -> CompletableFuture.completedFuture(json),
+                (provider, model, key, context, frames, schema, instructions) -> {
+                    reviewed.set(context.contains("Mock") && frames.size() == 1);
+                    return CompletableFuture.completedFuture("{\"reply\":\"Looks good\",\"operations\":[]}");
+                }, file -> CompletableFuture.completedFuture(java.util.List.of(new byte[]{1})), message -> {});
+        var settings = new AiSettings(AiProviderClient.Provider.OPENAI, "model", "model", true);
+        assertEquals("Mock", service.generate(settings, "a scene").get(5, TimeUnit.SECONDS).animation().name());
+        assertTrue(reviewed.get());
+    }
+
+    @Test
+    void repairAndVisualReviewShareAFourRequestLimit(@TempDir Path directory) throws Exception {
+        String valid = """
+                {"version":1,"name":"Mock","width":320,"height":240,"frameRate":30,"duration":1,
+                 "background":{"r":0,"g":0,"b":0,"a":0},"layers":[]}
+                """;
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var status = new java.util.concurrent.atomic.AtomicReference<String>();
+        AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), provider -> "test-key",
+                (provider, model, key, prompt) ->
+                        CompletableFuture.completedFuture(calls.incrementAndGet() < 3 ? "{}" : valid),
+                (provider, model, key, context, frames, schema, instructions) -> {
+                    calls.incrementAndGet();
+                    return CompletableFuture.completedFuture("invalid review");
+                }, file -> CompletableFuture.completedFuture(java.util.List.of(new byte[]{1})), status::set);
+        var settings = new AiSettings(AiProviderClient.Provider.OPENAI, "model", "model", true);
+        assertEquals("Mock", service.generate(settings, "a scene").get(5, TimeUnit.SECONDS).animation().name());
+        assertEquals(4, calls.get());
+        assertTrue(status.get().contains("skipped"));
+    }
+
+    @Test
+    void repairsAnInvalidGeneratedDocumentUsingValidationFeedback(@TempDir Path directory) throws Exception {
+        var prompts = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        String invalid = """
+                {"version":1,"name":"Mock","width":0,"height":240,"frameRate":30,"duration":1,
+                 "background":{"r":0,"g":0,"b":0,"a":0},"layers":[]}
+                """;
+        String valid = invalid.replace("\"width\":0", "\"width\":320");
+        AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), provider -> "test-key",
+                (provider, model, key, prompt) -> {
+                    prompts.add(prompt);
+                    return CompletableFuture.completedFuture(prompts.size() == 1 ? invalid : valid);
+                });
+        var result = service.generate("a scene").get(5, TimeUnit.SECONDS);
+        assertEquals(320, result.animation().width());
+        assertEquals(2, prompts.size());
+        assertTrue(prompts.get(1).contains("width"));
+        assertTrue(prompts.get(1).contains("a scene"));
+        assertTrue(prompts.get(1).contains(invalid.strip()));
+    }
+
+    @Test
+    void stopsAfterTwoUnsuccessfulRepairs(@TempDir Path directory) {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), provider -> "test-key",
+                (provider, model, key, prompt) -> {
+                    calls.incrementAndGet();
+                    return CompletableFuture.completedFuture("{}");
+                });
+        assertThrows(java.util.concurrent.CompletionException.class, () -> service.generate("a scene").join());
+        assertEquals(3, calls.get());
+    }
+
+    @Test
+    void cancellationInterruptsARepairRequest(@TempDir Path directory) throws Exception {
+        CompletableFuture<String> repair = new CompletableFuture<>();
+        CountDownLatch started = new CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), provider -> "test-key",
+                (provider, model, key, prompt) -> {
+                    if (calls.getAndIncrement() == 0) return CompletableFuture.completedFuture("{}");
+                    started.countDown();
+                    return repair;
+                });
+        var result = service.generate("a scene");
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        result.cancel(true);
+        assertTrue(repair.isCancelled());
+    }
+
+    @Test
     void usesTheExplicitSelectionEvenIfSavedPreferencesChange(@TempDir Path directory) throws Exception {
         Path file = directory.resolve("prefs");
         AiSettings.defaults().save(file);

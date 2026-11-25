@@ -159,7 +159,8 @@ public final class MainWindow {
         AiProviderClient aiClient = new AiProviderClient();
         AiGenerationService generator = new AiGenerationService(aiSettings,
                 readAiKey,
-                (provider, model, key, prompt) -> aiClient.generate(provider, model, key, prompt, AiAnimation.schema()));
+                (provider, model, key, prompt) -> aiClient.generate(provider, model, key, prompt, AiAnimation.schema()),
+                aiClient::review, message -> Platform.runLater(() -> aiConsole.log(message)));
         Supplier<AiSettings> loadAiSettings = () -> {
             try {
                 return AiSettings.load(aiSettings);
@@ -167,8 +168,11 @@ public final class MainWindow {
                 throw new UncheckedIOException(ex);
             }
         };
-        AiEditService editor = new AiEditService(readAiKey, aiClient::edit);
-        aiChat = new AiChat(workspace, loadAiSettings, editor::edit, aiConsole::log);
+        AiEditService editor = new AiEditService(readAiKey, aiClient::edit, aiClient::review,
+                message -> Platform.runLater(() -> aiConsole.log(message)));
+        aiChat = new AiChat(workspace, loadAiSettings, (settings, animation, selection, time, history, prompt) ->
+                editor.edit(settings, workspace.getActiveDocument().getFileContent(), selection, time, history, prompt),
+                aiConsole::log);
         aiConsole.installChat(aiChat);
         aiActions = new AiActions(dialogLayer, workspace, loadAiSettings, generator::generate, aiConsole::log);
         aiPreferences = new AiPreferencesDialog(dialogLayer, aiSettings,

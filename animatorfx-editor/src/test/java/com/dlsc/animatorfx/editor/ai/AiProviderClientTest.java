@@ -3,6 +3,7 @@ package com.dlsc.animatorfx.editor.ai;
 import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -11,6 +12,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.List;
+import java.util.Base64;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -22,6 +25,213 @@ import java.util.logging.Logger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AiProviderClientTest {
+
+    @Test
+    @EnabledIfSystemProperty(named = "animatorfx.slowAiTests", matches = "true")
+    void generationAcceptsSlowResponsesFromBothProvidersBeforeAndAfterHeaders() throws Exception {
+        var release = new java.util.concurrent.CountDownLatch(1);
+        try (ServerSocket openAiHeaders = new ServerSocket(0);
+             ServerSocket openAiBody = new ServerSocket(0);
+             ServerSocket anthropicHeaders = new ServerSocket(0);
+             ServerSocket anthropicBody = new ServerSocket(0)) {
+            String openAiResponse = JsonWriter.write(Map.of("status", "completed", "output", List.of(Map.of(
+                    "type", "message", "content", List.of(Map.of("type", "output_text", "text", "{}"))))));
+            String anthropicResponse = anthropicResponse("{}");
+            serveSlowly(openAiHeaders, openAiResponse, false, release);
+            serveSlowly(openAiBody, openAiResponse, true, release);
+            serveSlowly(anthropicHeaders, anthropicResponse, false, release);
+            serveSlowly(anthropicBody, anthropicResponse, true, release);
+            var requests = List.of(
+                    client(openAiHeaders).generate(AiProviderClient.Provider.OPENAI, "model", "key", "scene", Map.of()),
+                    client(openAiBody).generate(AiProviderClient.Provider.OPENAI, "model", "key", "scene", Map.of()),
+                    client(anthropicHeaders).generate(AiProviderClient.Provider.ANTHROPIC, "model", "key", "scene", Map.of()),
+                    client(anthropicBody).generate(AiProviderClient.Provider.ANTHROPIC, "model", "key", "scene", Map.of()));
+            try {
+                for (var request : requests) assertEquals("{}", request.get(110, TimeUnit.SECONDS));
+            } finally {
+                release.countDown();
+                requests.forEach(request -> request.cancel(true));
+            }
+        }
+    }
+
+    private static void serveSlowly(ServerSocket server, String body, boolean sendHeaders, java.util.concurrent.CountDownLatch release) {
+        CompletableFuture.runAsync(() -> {
+            try (var socket = server.accept()) {
+                var input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                int length = 0;
+                for (String line; !(line = input.readLine()).isEmpty();) {
+                    if (line.toLowerCase().startsWith("content-length:")) {
+                        length = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+                    }
+                }
+                while (length-- > 0) input.read();
+                byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+                byte[] headers = ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                        + bytes.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+                var output = socket.getOutputStream();
+                if (sendHeaders) {
+                    output.write(headers);
+                    output.write(bytes, 0, 1);
+                    output.flush();
+                }
+                if (release.await(96, TimeUnit.SECONDS)) return;
+                if (!sendHeaders) output.write(headers);
+                output.write(bytes, sendHeaders ? 1 : 0, bytes.length - (sendHeaders ? 1 : 0));
+                output.flush();
+            } catch (Exception ex) {
+                if (release.getCount() != 0) throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    @Test
+    void reviewSendsEveryFrameForBothProvidersWithoutLoggingImageData() throws Exception {
+        byte[] first = "synthetic-image-one".getBytes(StandardCharsets.UTF_8);
+        byte[] second = "synthetic-image-two".getBytes(StandardCharsets.UTF_8);
+        byte[] third = "synthetic-image-three".getBytes(StandardCharsets.UTF_8);
+        String encodedFirst = Base64.getEncoder().encodeToString(first);
+        String encodedSecond = Base64.getEncoder().encodeToString(second);
+        String encodedThird = Base64.getEncoder().encodeToString(third);
+        Logger logger = Logger.getLogger("com.dlsc.animatorfx.editor.ai.traffic");
+        var records = new CopyOnWriteArrayList<String>();
+        Handler handler = new Handler() {
+            @Override public void publish(LogRecord record) { records.add(record.getMessage()); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        logger.addHandler(handler);
+        try {
+            for (AiProviderClient.Provider provider : AiProviderClient.Provider.values()) {
+                try (ServerSocket server = new ServerSocket(0)) {
+                    String result = "{\"review\":\"good\"}";
+                    String response = provider == AiProviderClient.Provider.ANTHROPIC
+                            ? anthropicResponse(result)
+                            : JsonWriter.write(Map.of("status", "completed", "output", List.of(Map.of(
+                                    "type", "message", "content", List.of(Map.of(
+                                            "type", "output_text", "text", result))))));
+                    var request = serve(server, 200, response);
+                    assertEquals(result, client(server).review(provider, "model", "test-key", "review context",
+                            List.of(first, second, third), Map.of("type", "object"), "review instructions")
+                            .get(5, TimeUnit.SECONDS));
+                    String sent = request.get(5, TimeUnit.SECONDS);
+                    assertTrue(sent.contains(encodedFirst));
+                    assertTrue(sent.contains(encodedSecond));
+                    assertTrue(sent.contains(encodedThird));
+                    assertTrue(sent.contains("image/png"));
+                    assertTrue(sent.contains("review context"));
+                    assertTrue(sent.contains("review instructions"));
+                    Map<?, ?> body = (Map<?, ?>) Json.parse(sent.substring(sent.indexOf("\r\n\r\n") + 4));
+                    List<?> messages = (List<?>) body.get(provider == AiProviderClient.Provider.OPENAI ? "input" : "messages");
+                    Map<?, ?> user = (Map<?, ?>) messages.get(messages.size() - 1);
+                    List<?> blocks = (List<?>) user.get("content");
+                    assertEquals(4, blocks.size());
+                    for (int i = 1; i < blocks.size(); i++) {
+                        Map<?, ?> block = (Map<?, ?>) blocks.get(i);
+                        String encoded = List.of(encodedFirst, encodedSecond, encodedThird).get(i - 1);
+                        if (provider == AiProviderClient.Provider.OPENAI) {
+                            assertEquals("input_image", block.get("type"));
+                            assertEquals("data:image/png;base64," + encoded, block.get("image_url"));
+                        } else {
+                            assertEquals("image", block.get("type"));
+                            Map<?, ?> source = (Map<?, ?>) block.get("source");
+                            assertEquals("base64", source.get("type"));
+                            assertEquals("image/png", source.get("media_type"));
+                            assertEquals(encoded, source.get("data"));
+                        }
+                    }
+                    Map<?, ?> format = (Map<?, ?>) ((Map<?, ?>) body.get(
+                            provider == AiProviderClient.Provider.OPENAI ? "text" : "output_config")).get("format");
+                    assertEquals("json_schema", format.get("type"));
+                }
+            }
+            String log = String.join("\n", records);
+            assertTrue(log.contains("review context"));
+            assertFalse(log.contains(encodedFirst));
+            assertFalse(log.contains(encodedSecond));
+            assertFalse(log.contains(encodedThird));
+            assertFalse(log.contains("data:image"));
+            assertFalse(log.contains("test-key"));
+        } finally {
+            logger.removeHandler(handler);
+        }
+    }
+
+    @Test
+    void reviewRejectsInvalidOrOversizedFramesWithoutSending() {
+        AiProviderClient client = new AiProviderClient();
+        for (List<byte[]> frames : List.of(List.<byte[]>of(), List.of(new byte[0]),
+                List.of(new byte[1], new byte[1], new byte[1], new byte[1]),
+                List.of(new byte[1_000_001]), List.of(new byte[500_001], new byte[500_000]),
+                java.util.Arrays.asList((byte[]) null))) {
+            assertThrows(CompletionException.class, () -> client.review(AiProviderClient.Provider.OPENAI,
+                    "model", "key", "context", frames, Map.of("type", "object"), "instructions").join());
+        }
+        assertThrows(CompletionException.class, () -> client.review(AiProviderClient.Provider.OPENAI,
+                "model", "key", "context", null, Map.of("type", "object"), "instructions").join());
+    }
+
+    @Test
+    void reviewDoesNotRetryAndRedactsImagesEchoedInProviderErrors() throws Exception {
+        byte[] frame = "private-image-data".getBytes(StandardCharsets.UTF_8);
+        String encoded = Base64.getEncoder().encodeToString(frame);
+        Logger logger = Logger.getLogger("com.dlsc.animatorfx.editor.ai.traffic");
+        var records = new CopyOnWriteArrayList<String>();
+        Handler handler = new Handler() {
+            @Override public void publish(LogRecord record) { records.add(record.getMessage()); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        logger.addHandler(handler);
+        try {
+            for (AiProviderClient.Provider provider : AiProviderClient.Provider.values()) {
+                try (ServerSocket server = new ServerSocket(0)) {
+                    server.setSoTimeout(500);
+                    var request = serve(server, 429, JsonWriter.write(Map.of("error", Map.of(
+                            "message", "bad data:image/png;base64," + encoded))));
+                    var failure = assertThrows(CompletionException.class, () -> client(server).review(provider,
+                            "model", "test-key", "review context", List.of(frame),
+                            Map.of("type", "object"), "review instructions").join());
+                    request.get(5, TimeUnit.SECONDS);
+                    assertFalse(failure.toString().contains(encoded));
+                    assertThrows(java.net.SocketTimeoutException.class, server::accept);
+                }
+            }
+            String log = String.join("\n", records);
+            assertFalse(log.contains(encoded));
+            assertFalse(log.contains("data:image"));
+        } finally {
+            logger.removeHandler(handler);
+        }
+    }
+
+    @Test
+    void reviewRedactsJsonEscapedImageDataInProviderResponses() throws Exception {
+        Logger logger = Logger.getLogger("com.dlsc.animatorfx.editor.ai.traffic");
+        var records = new CopyOnWriteArrayList<String>();
+        Handler handler = new Handler() {
+            @Override public void publish(LogRecord record) { records.add(record.getMessage()); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        logger.addHandler(handler);
+        try {
+            for (byte[] frame : List.of(new byte[] {(byte) 255, (byte) 255, (byte) 255},
+                    "private-image-data".getBytes(StandardCharsets.UTF_8))) {
+                try (ServerSocket server = new ServerSocket(0)) {
+                    String encoded = Base64.getEncoder().encodeToString(frame).replace("/", "\\/");
+                    serve(server, 400, "{\"error\":{\"message\":\"data:image\\/png;base64," + encoded + "\"}}");
+                    assertThrows(CompletionException.class, () -> client(server).review(AiProviderClient.Provider.OPENAI,
+                            "model", "test-key", "context", List.of(frame), Map.of("type", "object"), "review").join());
+                }
+            }
+            String log = String.join("\n", records);
+            assertFalse(log.contains("data:image"));
+            assertFalse(log.contains("\\/\\/\\/\\/"));
+        } finally {
+            logger.removeHandler(handler);
+        }
+    }
 
     @Test
     void logsProviderRequestsAndResponsesWithoutExposingTheKey() throws Exception {
@@ -167,6 +377,50 @@ class AiProviderClientTest {
     }
 
     @Test
+    void opus55GenerationRequestsALargerBudgetWithoutChangingOtherRequests() throws Exception {
+        for (String model : List.of("claude-opus-5-5", "claude-sonnet-4-5")) {
+            try (ServerSocket server = new ServerSocket(0)) {
+                var request = serve(server, 200, anthropicResponse("{}"));
+                client(server).generate(AiProviderClient.Provider.ANTHROPIC, model,
+                        "test-key", "scene", Map.of()).get(5, TimeUnit.SECONDS);
+                String sent = request.get(5, TimeUnit.SECONDS);
+                Map<?, ?> body = (Map<?, ?>) Json.parse(sent.substring(sent.indexOf("\r\n\r\n") + 4));
+                assertEquals(model.equals("claude-opus-5-5") ? 64000 : 16384,
+                        ((Number) body.get("max_tokens")).intValue());
+            }
+        }
+        try (ServerSocket server = new ServerSocket(0)) {
+            var request = serve(server, 200, anthropicResponse("{}"));
+            client(server).edit(AiProviderClient.Provider.ANTHROPIC, "claude-opus-5-5",
+                    "test-key", "scene").get(5, TimeUnit.SECONDS);
+            String sent = request.get(5, TimeUnit.SECONDS);
+            Map<?, ?> body = (Map<?, ?>) Json.parse(sent.substring(sent.indexOf("\r\n\r\n") + 4));
+            assertEquals(16384, ((Number) body.get("max_tokens")).intValue());
+        }
+        try (ServerSocket server = new ServerSocket(0)) {
+            var request = serve(server, 200, anthropicResponse("{}"));
+            client(server).review(AiProviderClient.Provider.ANTHROPIC, "claude-opus-5-5",
+                    "test-key", "scene", List.of(new byte[] {1}), Map.of(), "review").get(5, TimeUnit.SECONDS);
+            String sent = request.get(5, TimeUnit.SECONDS);
+            Map<?, ?> body = (Map<?, ?>) Json.parse(sent.substring(sent.indexOf("\r\n\r\n") + 4));
+            assertEquals(16384, ((Number) body.get("max_tokens")).intValue());
+        }
+    }
+
+    @Test
+    void anthropicTokenExhaustionExplainsHowToProceed() throws Exception {
+        try (ServerSocket server = new ServerSocket(0)) {
+            serve(server, 200, "{\"stop_reason\":\"max_tokens\",\"content\":[]}");
+            CompletionException error = assertThrows(CompletionException.class, () ->
+                    client(server).generate(AiProviderClient.Provider.ANTHROPIC, "claude-opus-5-5",
+                            "test-key", "scene", Map.of()).join());
+            String message = error.getCause().getMessage().toLowerCase();
+            assertTrue(message.contains("token"));
+            assertTrue(message.contains("simpler"));
+        }
+    }
+
+    @Test
     void sendsTheEntireAnimationSchemaToOpenAi() throws Exception {
         try (ServerSocket server = new ServerSocket(0)) {
             var request = serve(server, 200,
@@ -249,7 +503,9 @@ class AiProviderClientTest {
     void anthropicAnimationStillPassesThroughLocalValidation(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory)
             throws Exception {
         try (ServerSocket server = new ServerSocket(0)) {
-            serve(server, 200, anthropicResponse("{\"version\":1,\"version\":2}"));
+            for (int i = 0; i < 3; i++) {
+                serve(server, 200, anthropicResponse("{\"version\":1,\"version\":2}"));
+            }
             AiProviderClient provider = client(server);
             AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), name -> "test-key",
                     (selected, model, key, prompt) -> provider.generate(selected, model, key, prompt, AiAnimation.schema()));
@@ -269,31 +525,46 @@ class AiProviderClientTest {
     @Test
     void cancellingGenerationClosesTheProviderConnection() throws Exception {
         for (AiProviderClient.Provider provider : AiProviderClient.Provider.values()) {
-            try (ServerSocket server = new ServerSocket(0)) {
-                var received = new CompletableFuture<Void>();
-                var closed = CompletableFuture.runAsync(() -> {
-                    try (var socket = server.accept()) {
-                        socket.setSoTimeout(5000);
-                        var input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-                        int length = 0;
-                        for (String line; !(line = input.readLine()).isEmpty();) {
-                            if (line.toLowerCase().startsWith("content-length:")) {
-                                length = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
-                            }
+            assertCancellingClosesConnection(provider, false);
+        }
+    }
+
+    @Test
+    void cancellingReviewClosesTheProviderConnection() throws Exception {
+        for (AiProviderClient.Provider provider : AiProviderClient.Provider.values()) {
+            assertCancellingClosesConnection(provider, true);
+        }
+    }
+
+    private static void assertCancellingClosesConnection(AiProviderClient.Provider provider, boolean review)
+            throws Exception {
+        try (ServerSocket server = new ServerSocket(0)) {
+            var received = new CompletableFuture<Void>();
+            var closed = CompletableFuture.runAsync(() -> {
+                try (var socket = server.accept()) {
+                    socket.setSoTimeout(5000);
+                    var input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                    int length = 0;
+                    for (String line; !(line = input.readLine()).isEmpty();) {
+                        if (line.toLowerCase().startsWith("content-length:")) {
+                            length = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
                         }
-                        while (length-- > 0) input.read();
-                        received.complete(null);
-                        assertEquals(-1, input.read());
-                    } catch (Exception ex) {
-                        throw new RuntimeException(ex);
                     }
-                });
-                var request = client(server).generate(provider, "model",
-                        "test-key", "draw a circle", Map.of("type", "object"));
-                received.get(5, TimeUnit.SECONDS);
-                request.cancel(true);
-                closed.get(5, TimeUnit.SECONDS);
-            }
+                    while (length-- > 0) input.read();
+                    received.complete(null);
+                    assertEquals(-1, input.read());
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            });
+            var request = review
+                    ? client(server).review(provider, "model", "test-key", "draw a circle",
+                            List.of(new byte[] {1}), Map.of("type", "object"), "review")
+                    : client(server).generate(provider, "model", "test-key",
+                            "draw a circle", Map.of("type", "object"));
+            received.get(5, TimeUnit.SECONDS);
+            request.cancel(true);
+            closed.get(5, TimeUnit.SECONDS);
         }
     }
 
