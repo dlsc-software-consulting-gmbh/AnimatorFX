@@ -47,7 +47,8 @@ public final class AiProviderClient {
     private static final Duration OVERALL_TIMEOUT = Duration.ofSeconds(95);
     private static final Duration GENERATION_TIMEOUT = Duration.ofMinutes(10);
     private static final String INSTRUCTIONS = "Create an editable vector animation matching the user's description. "
-            + "Follow the schema exactly. Do not include image, audio, video, or external assets. "
+            + "Follow the schema exactly. Do not include audio, video, or external assets; use images only "
+            + "through the provided attachment ids. "
             + "Use a coherent palette and clear foreground/background hierarchy. Keep important subjects in frame "
             + "and leave intentional margins. Build recognizable objects from simple editable shapes and groups. "
             + "Use animation only where it supports the request: arrange keyframes in time, keep motion continuous, "
@@ -77,7 +78,8 @@ public final class AiProviderClient {
     }
 
     public CompletableFuture<String> edit(Provider provider, String model, String apiKey, String context) {
-        return send(provider, model, apiKey, context, AiEdits.schema(), AiEdits.instructions(), 400_000);
+        return send(provider, model, apiKey, context, AiEdits.schema(), AiEdits.instructions(), 400_000,
+                List.of(), GENERATION_TIMEOUT, GENERATION_TIMEOUT, 16384, null);
     }
 
     public CompletableFuture<String> generate(Provider provider, String model, String apiKey, String prompt,
@@ -87,8 +89,22 @@ public final class AiProviderClient {
 
     public CompletableFuture<String> generate(Provider provider, String model, String apiKey, String prompt,
                                               Map<String, Object> schema, AiUsage usage) {
-        return send(provider, model, apiKey, prompt, schema, INSTRUCTIONS, 160_000,
-                List.of(), GENERATION_TIMEOUT, GENERATION_TIMEOUT,
+        return generate(provider, model, apiKey, prompt, schema, usage, List.of());
+    }
+
+    /**
+     * Generates an animation. The attachments are shown to the AI as images, in order, and listed by
+     * id so that it can place them or use them as design references.
+     *
+     * @return the structured provider response
+     */
+    public CompletableFuture<String> generate(Provider provider, String model, String apiKey, String prompt,
+                                              Map<String, Object> schema, AiUsage usage,
+                                              List<AiAttachment> attachments) {
+        List<String> images = attachments.stream()
+                .map(attachment -> Base64.getEncoder().encodeToString(attachment.preview())).toList();
+        return send(provider, model, apiKey, prompt, schema, INSTRUCTIONS + manifest(attachments), 160_000,
+                images, GENERATION_TIMEOUT, GENERATION_TIMEOUT,
                 provider == Provider.ANTHROPIC && "claude-opus-5-5".equals(model) ? 64000 : 16384, usage);
     }
 
@@ -123,10 +139,21 @@ public final class AiProviderClient {
                 images, REQUEST_TIMEOUT, OVERALL_TIMEOUT, 16384, usage);
     }
 
-    private CompletableFuture<String> send(Provider provider, String model, String apiKey, String prompt,
-                                           Map<String, Object> schema, String baseInstructions, int promptLimit) {
-        return send(provider, model, apiKey, prompt, schema, baseInstructions, promptLimit,
-                List.of(), REQUEST_TIMEOUT, OVERALL_TIMEOUT, 16384, null);
+    static String manifest(List<AiAttachment> attachments) {
+        if (attachments.isEmpty()) {
+            return " No attachments are available; do not use image or vector content.";
+        }
+        StringBuilder text = new StringBuilder(" The user attached these files, shown as images in this order:");
+        for (int i = 0; i < attachments.size(); i++) {
+            AiAttachment attachment = attachments.get(i);
+            text.append("\n").append(AiAttachment.id(i)).append(": ").append(attachment.name().replaceAll("\\s+", " "))
+                    .append(" (").append(attachment.kind() == AiAttachment.Kind.VECTOR ? "vector" : "raster")
+                    .append(", ").append(Math.round(attachment.width())).append('x')
+                    .append(Math.round(attachment.height())).append(" px)");
+        }
+        return text.append("\nPlace a raster attachment with image content and an SVG with vector content, "
+                + "using its id as asset, or use attachments only as design references for palette, style and "
+                + "layout. Follow the request on how to use them. Keep each attachment's aspect ratio.").toString();
     }
 
     private CompletableFuture<String> send(Provider provider, String model, String apiKey, String prompt,

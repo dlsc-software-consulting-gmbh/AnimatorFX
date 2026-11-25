@@ -173,14 +173,14 @@ public final class MainWindow {
         aiConsole.installChat(aiChat);
         AiNotifications notifications = new AiNotifications(workspace, aiConsole::log);
         aiGenerationHistory = new AiGenerationHistory(notifications, theme, this::showAiGeneration);
-        aiActions = new AiActions(dialogLayer, notifications, loadAiSettings, (settings, prompt, usage) -> {
+        aiActions = new AiActions(dialogLayer, notifications, loadAiSettings, (settings, prompt, attachments, usage) -> {
             AiGenerationService generator = new AiGenerationService(aiSettings, readAiKey,
                     (provider, model, key, input) -> aiClient.generate(provider, model, key, input,
-                            AiAnimation.schema(), usage),
+                            AiAnimation.schema(), usage, attachments),
                     (provider, model, key, context, frames, schema, instructions) ->
                             aiClient.review(provider, model, key, context, frames, schema, instructions, usage),
                     message -> Platform.runLater(() -> aiConsole.log(message)));
-            return generator.generate(settings, prompt);
+            return generator.generate(settings, prompt, attachments);
         });
         aiPreferences = new AiPreferencesDialog(dialogLayer, aiSettings,
                 putAiKey, deleteAiKey, readAiKey, listModels, () -> {

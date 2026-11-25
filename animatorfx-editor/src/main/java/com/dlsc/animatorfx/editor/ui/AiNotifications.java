@@ -1,5 +1,6 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.ai.AiAttachment;
 import com.dlsc.animatorfx.editor.ai.AiErrors;
 import com.dlsc.animatorfx.editor.ai.AiProviderClient;
 import com.dlsc.animatorfx.editor.ai.AiPreviewFrames;
@@ -69,13 +70,17 @@ final class AiNotifications {
     }
 
     void start(AiSettings settings, String prompt, AiActions.Generator generator) {
+        start(settings, prompt, List.of(), generator);
+    }
+
+    void start(AiSettings settings, String prompt, List<AiAttachment> attachments, AiActions.Generator generator) {
         if (disposed) return;
-        Job job = new Job(settings, prompt);
+        Job job = new Job(settings, prompt, attachments.size());
         jobs.add(job);
         showNotification(job);
         activity.accept("Generation started: " + job.context);
         try {
-            job.future = generator.start(settings, prompt, job.usage);
+            job.future = generator.start(settings, prompt, List.copyOf(attachments), job.usage);
             job.future.whenComplete((file, failure) ->
                     Platform.runLater(() -> complete(job, file, failure)));
         } catch (RuntimeException ex) {
@@ -223,10 +228,11 @@ final class AiNotifications {
         boolean opened;
         Image preview;
 
-        private Job(AiSettings settings, String prompt) {
+        private Job(AiSettings settings, String prompt, int attachments) {
             this.context = settings.provider() + " / " + settings.model();
             this.providerDetails = "Provider: " + (settings.provider() == AiProviderClient.Provider.OPENAI
-                    ? "OpenAI" : "Anthropic") + "\nModel: " + settings.model();
+                    ? "OpenAI" : "Anthropic") + "\nModel: " + settings.model()
+                    + (attachments > 0 ? "\nAttachments: " + attachments : "");
             this.prompt = prompt;
             String text = prompt.replaceAll("\\s+", " ");
             this.description = text.length() <= 100 ? text : text.substring(0, 100) + "…";

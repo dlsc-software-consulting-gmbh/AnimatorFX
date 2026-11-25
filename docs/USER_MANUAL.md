@@ -10,7 +10,7 @@ Create a keyframed animation, save it as an `.afx` document, and play it inside 
 
 - [1. Get started](#1-get-started) — Launch the editor and find your way around.
 - [2. Make your first animation](#2-make-your-first-animation) — Animate a shape, preview it, and save it.
-- [3. Build a composition](#3-build-a-composition) — Organize layers, import artwork, and add markers or slots.
+- [3. Build a composition](#3-build-a-composition) — Organize layers, import artwork, generate with AI, and add markers or slots.
 - [4. Add sound](#4-add-sound) — Work with audio layers, waveforms, and cues.
 - [5. Embed in JavaFX](#5-embed-in-javafx) — Add the player, package an `.afx` file, and run it.
 - [6. Connect animations to your UI](#6-connect-animations-to-your-ui) — Play named ranges and animate application nodes.
@@ -93,6 +93,12 @@ With the Select tool active, right-click the canvas for Cut, Copy, Paste, Duplic
 ### Import artwork
 
 Use **File → Import** for SVG, Lottie JSON, or FXML. These imports open a new document by default; **SVG into Current Document…** adds SVG artwork to the active one. Images and sounds import into the active document. If an import reports skipped content, select **Show warnings** and inspect the resulting layers before saving. See [importer coverage](../README.md#importers) for format-specific limitations.
+
+### Generate with AI
+
+Choose **File → Generate with AI…** to describe an animation and let the AI provider selected in **Edit → AI Preferences…** build it. Generation runs in the background. When it is ready, click **Open Animation** in its notification to open the result as a new document.
+
+To use your own artwork, click **Add Files…** in the generation dialog or drop files onto its **Attachments** area. You can attach up to five PNG, JPEG, GIF, or SVG files of at most 5 MB each. The AI either places an attachment in the animation (images as image layers, SVGs as editable vector layers) or uses it only as a reference for colors, style, and layout. Say in your description how each file should be used, for example "animate my logo into the center" or "use the colors of the photo". Only placed attachments are embedded in the document. Attachments are sent to the AI provider together with your description.
 
 ### Name the parts your app will use
 

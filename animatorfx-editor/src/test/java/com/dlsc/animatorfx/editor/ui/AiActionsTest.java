@@ -1,5 +1,6 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.ai.AiAttachment;
 import com.dlsc.animatorfx.editor.ai.AiGenerationService;
 import com.dlsc.animatorfx.editor.ai.AiProviderClient.Provider;
 import com.dlsc.animatorfx.editor.ai.AiSettings;
@@ -193,6 +194,59 @@ class AiActionsTest {
     }
 
     @Test
+    void attachmentsReachTheGeneratorAndAreCountedInTheJobDetails() throws Exception {
+        CompletableFuture<AnimationFile> response = new CompletableFuture<>();
+        Fixture fixture = fx(() -> new Fixture(response));
+        var logo = new AiAttachment("logo.png", AiAttachment.Kind.RASTER, "png", new byte[] {1}, 10, 10,
+                new byte[] {1}, null);
+        var photo = new AiAttachment("photo.png", AiAttachment.Kind.RASTER, "png", new byte[] {2}, 10, 10,
+                new byte[] {2}, null);
+        List<List<AiAttachment>> received = new ArrayList<>();
+        try {
+            fx(() -> {
+                fixture.notifications.start(AiSettings.defaults(), "A ball", List.of(logo, photo),
+                        (settings, prompt, attachments, usage) -> {
+                            received.add(attachments);
+                            return response;
+                        });
+                fixture.notifications.start(AiSettings.defaults(), "Plain", (settings, prompt, attachments, usage) ->
+                        new CompletableFuture<>());
+                return null;
+            });
+            fx(() -> {
+                assertEquals(List.of(List.of(logo, photo)), received);
+                assertTrue(fixture.notifications.jobs().getFirst().summary.contains("\nAttachments: 2\n"),
+                        fixture.notifications.jobs().getFirst().summary);
+                assertFalse(fixture.notifications.jobs().getLast().summary.contains("Attachments"));
+                return null;
+            });
+            java.nio.file.Path image = java.nio.file.Files.createTempFile("attachment", ".png");
+            javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(8, 8,
+                    java.awt.image.BufferedImage.TYPE_INT_RGB), "png", image.toFile());
+            try {
+                fx(() -> {
+                    fixture.actions.generate();
+                    fixture.scene.getRoot().applyCss();
+                    ((TextArea) fixture.scene.lookup("#ai-description")).setText("Use my logo");
+                    ((AiAttachmentsView) fixture.scene.lookup("#ai-attachments")).add(List.of(image));
+                    ((Button) fixture.scene.lookup("#ai-generate")).fire();
+                    return null;
+                });
+                WaitForAsyncUtils.waitForFxEvents();
+                fx(() -> {
+                    assertEquals(3, fixture.notifications.jobs().size());
+                    assertTrue(fixture.notifications.jobs().getLast().summary.contains("\nAttachments: 1\n"));
+                    return null;
+                });
+            } finally {
+                java.nio.file.Files.deleteIfExists(image);
+            }
+        } finally {
+            fx(() -> { fixture.actions.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
     void historyShowsLiveJobsStatisticsAndPreviewAfterOpening() throws Exception {
         CompletableFuture<AnimationFile> response = new CompletableFuture<>();
         CompletableFuture<AnimationFile> other = new CompletableFuture<>();
@@ -205,8 +259,8 @@ class AiActionsTest {
             fx(() -> {
                 Button anchor = new Button("History");
                 fixture.notifications.pane().setContent(anchor);
-                fixture.notifications.start(AiSettings.defaults(), "A ball", (settings, prompt, usage) -> response);
-                fixture.notifications.start(AiSettings.defaults(), "Other", (settings, prompt, usage) -> other);
+                fixture.notifications.start(AiSettings.defaults(), "A ball", (settings, prompt, attachments, usage) -> response);
+                fixture.notifications.start(AiSettings.defaults(), "Other", (settings, prompt, attachments, usage) -> other);
                 history.show(anchor);
                 return null;
             });
@@ -267,8 +321,8 @@ class AiActionsTest {
         try {
             assertFalse(fx(() -> button.getPseudoClassStates().contains(running)));
             fx(() -> {
-                fixture.notifications.start(AiSettings.defaults(), "First", (settings, prompt, usage) -> first);
-                fixture.notifications.start(AiSettings.defaults(), "Second", (settings, prompt, usage) -> second);
+                fixture.notifications.start(AiSettings.defaults(), "First", (settings, prompt, attachments, usage) -> first);
+                fixture.notifications.start(AiSettings.defaults(), "Second", (settings, prompt, attachments, usage) -> second);
                 return null;
             });
             assertTrue(fx(() -> button.getPseudoClassStates().contains(running)));
@@ -529,7 +583,7 @@ class AiActionsTest {
             stage.setScene(scene);
             stage.show();
             actions = new AiActions(layer, notifications, AiSettings::defaults,
-                    (settings, prompt, usage) -> generator.apply(prompt));
+                    (settings, prompt, attachments, usage) -> generator.apply(prompt));
         }
 
         Fixture(AtomicReference<AiSettings> current, AtomicReference<AiSettings> used,
@@ -540,7 +594,7 @@ class AiActionsTest {
             stage.setOnHidden(event -> theme.dispose());
             stage.setScene(scene);
             stage.show();
-            actions = new AiActions(layer, notifications, current::get, (settings, prompt, usage) -> {
+            actions = new AiActions(layer, notifications, current::get, (settings, prompt, attachments, usage) -> {
                 used.set(settings);
                 return response;
             });

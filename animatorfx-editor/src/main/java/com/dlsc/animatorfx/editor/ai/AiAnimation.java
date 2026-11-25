@@ -2,12 +2,15 @@ package com.dlsc.animatorfx.editor.ai;
 
 import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
+import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Geometry;
 import com.dlsc.animatorfx.model.GroupLayer;
+import com.dlsc.animatorfx.model.ImageLayer;
 import com.dlsc.animatorfx.model.Keyframe;
 import com.dlsc.animatorfx.model.Layer;
 import com.dlsc.animatorfx.model.LayerBase;
+import com.dlsc.animatorfx.model.Mask;
 import com.dlsc.animatorfx.model.Paint;
 import com.dlsc.animatorfx.model.PathData;
 import com.dlsc.animatorfx.model.Rgba;
@@ -28,10 +31,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 
 /**
- * Provider-independent, asset-free AI vector document format, version 1.
+ * Provider-independent AI vector document format, version 1. Images enter a document only through
+ * attachments the user provided, referenced by id.
  * The schema is a nonrecursive graph of definitions suitable for strict structured output.
  */
 public final class AiAnimation {
@@ -64,13 +69,24 @@ public final class AiAnimation {
      * @throws AnimationFormatException with the offending JSON path, or syntax location, on invalid input
      */
     public static AnimationFile parse(String json) throws AnimationFormatException {
+        return parse(json, List.of());
+    }
+
+    /**
+     * Like {@link #parse(String)}, and also places the attachments referenced by {@code image} and
+     * {@code vector} content. Attachment {@code i} has the id {@link AiAttachment#id(int)}. Only
+     * referenced attachments are embedded in the result.
+     *
+     * @throws AnimationFormatException also when a reference is unknown or names the wrong kind of attachment
+     */
+    public static AnimationFile parse(String json, List<AiAttachment> attachments) throws AnimationFormatException {
         if (json == null || json.length() > MAX_JSON_LENGTH) {
             throw error("$", "Expected JSON of at most " + MAX_JSON_LENGTH + " characters");
         }
         checkTokens(json);
         Object parsed = Json.parse(json);
         validate(parsed, VALIDATION_SCHEMA, "$");
-        return new Conversion(object(parsed)).convert();
+        return new Conversion(object(parsed), List.copyOf(attachments)).convert();
     }
 
     private static Object portableSchema(Object value) {
@@ -130,7 +146,7 @@ public final class AiAnimation {
                 "closed", bool("Whether to close this contour."),
                 "vertices", array(ref("vertex"), 1, 256, "Ordered local-space vertices, at most 256.")));
         defs.put("content", Map.of(
-                "description", "Editable vector content. Choose exactly one supported kind; no assets or URLs.",
+                "description", "Editable vector content or a provided attachment. Choose exactly one supported kind; no URLs.",
                 "anyOf", List.of(
                         obj("Rectangle spans (0,0) to size in local pixels.",
                                 "kind", enumeration("Content kind.", "rectangle"),
@@ -152,6 +168,14 @@ public final class AiAnimation {
                                 "italic", bool("Italic text."),
                                 "alignment", enumeration("Alignment about local origin.", "left", "center", "right"),
                                 "fill", ref("colorTrack"), "stroke", nullable(ref("stroke"))),
+                        obj("Raster attachment drawn stretched from (0,0) to size; keep its aspect ratio.",
+                                "kind", enumeration("Content kind.", "image"),
+                                "asset", string(1, 16, "Id of a raster attachment from the manifest, e.g. asset1."),
+                                "size", ref("size")),
+                        obj("SVG attachment as editable shapes, fitted uniformly and centered in (0,0) to size.",
+                                "kind", enumeration("Content kind.", "vector"),
+                                "asset", string(1, 16, "Id of an SVG attachment from the manifest, e.g. asset1."),
+                                "size", ref("size")),
                         obj("Group applies its transform and opacity to children identified by parentId. "
                                         + "Do not nest layers in JSON.",
                                 "kind", enumeration("Content kind.", "group")))));
@@ -167,7 +191,8 @@ public final class AiAnimation {
         Map<String, Object> root = new LinkedHashMap<>(obj(
                 "AnimatorFX AI vector animation version 1. Pixel coordinates: origin top-left, x right, y down. "
                         + "Root layers use artboard coordinates; children use parent-local coordinates. "
-                        + "Layers and siblings render bottom to top in array order. No external assets. "
+                        + "Layers and siblings render bottom to top in array order. No external assets; images only "
+                        + "through attachment ids. "
                         + "Limits: 1,000,000 JSON characters, 128 layers, 16 containing groups, 4096 total keyframes, "
                         + "8192 total path vertices. No scripts, expressions, media, masks or effects.",
                 "version", Map.of("type", "integer", "enum", List.of(1), "description", "Schema version, exactly 1."),
@@ -390,11 +415,16 @@ public final class AiAnimation {
         private final Map<String, String> paths = new LinkedHashMap<>();
         private final Map<String, List<String>> children = new LinkedHashMap<>();
         private final double duration;
+        private final List<AiAttachment> attachments;
+        private final Map<Integer, Asset> placed = new LinkedHashMap<>();
+        private final Map<String, Asset> imported = new LinkedHashMap<>();
+        private final Map<String, byte[]> bytes = new LinkedHashMap<>();
         private int keyframeCount;
         private int vertexCount;
 
-        private Conversion(Map<String, Object> document) {
+        private Conversion(Map<String, Object> document, List<AiAttachment> attachments) {
             this.document = document;
+            this.attachments = attachments;
             duration = number(document, "duration");
         }
 
@@ -437,10 +467,13 @@ public final class AiAnimation {
                     current = parent;
                 }
             }
+            List<Layer> roots = convertChildren(null);
+            List<Asset> assets = new ArrayList<>(placed.values());
+            assets.addAll(imported.values());
             var animation = new Animation(Animation.CURRENT_FORMAT, (String) document.get("name"),
                     number(document, "width"), number(document, "height"), number(document, "frameRate"),
-                    duration, color(document.get("background")), List.of(), List.of(), convertChildren(null));
-            return new AnimationFile(animation, Map.of());
+                    duration, color(document.get("background")), List.of(), assets, roots);
+            return new AnimationFile(animation, bytes);
         }
 
         private List<Layer> convertChildren(String parent) throws AnimationFormatException {
@@ -471,6 +504,9 @@ public final class AiAnimation {
             if (kind.equals("group")) {
                 return new GroupLayer(base, convertChildren(id));
             }
+            if (kind.equals("image") || kind.equals("vector")) {
+                return attachment(base, content, cp, kind.equals("vector"));
+            }
             Animatable<Paint> fill = track(content.get("fill"), AiAnimation::paint, cp + ".fill");
             Stroke stroke = null;
             if (content.get("stroke") != null) {
@@ -494,6 +530,64 @@ public final class AiAnimation {
                 default -> throw error(cp + ".kind", "Unsupported vector content");
             };
             return new ShapeLayer(base, geometry, fill, stroke, null);
+        }
+
+        private Layer attachment(LayerBase base, Map<String, Object> content, String path, boolean vector)
+                throws AnimationFormatException {
+            String id = (String) content.get("asset");
+            int index = -1;
+            for (int i = 0; i < attachments.size(); i++) {
+                if (AiAttachment.id(i).equals(id)) index = i;
+            }
+            if (index < 0) throw error(path + ".asset", "Unknown attachment: " + id);
+            AiAttachment attachment = attachments.get(index);
+            if ((attachment.kind() == AiAttachment.Kind.VECTOR) != vector) {
+                throw error(path + ".asset", id + " is " + (vector ? "a raster image; use image content"
+                        : "an SVG; use vector content"));
+            }
+            Vec2 size = vector(content.get("size"));
+            if (!vector) {
+                Asset asset = placed.computeIfAbsent(index, ignored -> {
+                    String assetId = UUID.randomUUID().toString();
+                    bytes.put(assetId, attachment.bytes());
+                    return new Asset(assetId, Asset.Kind.IMAGE, "assets/" + assetId + "." + attachment.extension(),
+                            attachment.name());
+                });
+                return new ImageLayer(base, asset.id(), size.x(), size.y());
+            }
+            AnimationFile svg = attachment.vector();
+            for (Asset asset : svg.animation().assets()) {
+                if (imported.putIfAbsent(asset.id(), asset) == null) bytes.put(asset.id(), svg.assets().get(asset.id()));
+            }
+            double scale = Math.min(size.x() / attachment.width(), size.y() / attachment.height());
+            Transform fit = Transform.IDENTITY
+                    .withPosition(Animatable.of(new Vec2((size.x() - attachment.width() * scale) / 2,
+                            (size.y() - attachment.height() * scale) / 2)))
+                    .withScale(Animatable.of(new Vec2(scale, scale)));
+            Map<String, String> ids = new LinkedHashMap<>();
+            List<Layer> children = new ArrayList<>();
+            for (Layer layer : svg.animation().layers()) children.add(copy(layer, base, ids));
+            LayerBase wrapper = LayerBase.create(attachment.name(), duration).withInPoint(base.inPoint())
+                    .withOutPoint(base.outPoint()).withTransform(fit);
+            return new GroupLayer(base, List.of(new GroupLayer(wrapper, children)));
+        }
+
+        /** Copies an imported layer with fresh ids, so an attachment can be placed more than once. */
+        private static Layer copy(Layer layer, LayerBase timing, Map<String, String> ids) {
+            LayerBase base = layer.base();
+            Mask mask = base.mask() == null ? null : new Mask(fresh(base.mask().layerId(), ids), base.mask().mode());
+            Layer copy = layer.withBase(base.withId(fresh(base.id(), ids)).withMask(mask)
+                    .withInPoint(timing.inPoint()).withOutPoint(timing.outPoint()));
+            if (copy instanceof GroupLayer group) {
+                List<Layer> children = new ArrayList<>();
+                for (Layer child : group.children()) children.add(copy(child, timing, ids));
+                return group.withChildren(children);
+            }
+            return copy;
+        }
+
+        private static String fresh(String id, Map<String, String> ids) {
+            return ids.computeIfAbsent(id, ignored -> UUID.randomUUID().toString());
         }
 
         private PathData path(Map<String, Object> content, String path) throws AnimationFormatException {

@@ -68,10 +68,26 @@ public final class AiGenerationService {
     }
 
     public CompletableFuture<AnimationFile> generate(AiSettings settings, String prompt) {
-        return generateWithSettings(prompt, Objects.requireNonNull(settings));
+        return generate(settings, prompt, List.of());
+    }
+
+    /**
+     * Generates an animation that may place the given attachments.
+     *
+     * @param attachments the files the AI may place or use as references; the request must send the same list
+     * @return the validated animation, including the placed attachments
+     */
+    public CompletableFuture<AnimationFile> generate(AiSettings settings, String prompt,
+                                                     List<AiAttachment> attachments) {
+        return generateWithSettings(prompt, Objects.requireNonNull(settings), List.copyOf(attachments));
     }
 
     private CompletableFuture<AnimationFile> generateWithSettings(String prompt, AiSettings selection) {
+        return generateWithSettings(prompt, selection, List.of());
+    }
+
+    private CompletableFuture<AnimationFile> generateWithSettings(String prompt, AiSettings selection,
+                                                                  List<AiAttachment> attachments) {
         if (prompt == null || prompt.isBlank() || prompt.length() > 8000) {
             return CompletableFuture.failedFuture(new Failure("Enter a description of at most 8,000 characters."));
         }
@@ -103,7 +119,7 @@ public final class AiGenerationService {
                                 input -> request.send(settings.provider(), settings.model(), key, input),
                                 json -> {
                                     try {
-                                        return AiAnimation.parse(json);
+                                        return AiAnimation.parse(json, attachments);
                                     } catch (Exception | StackOverflowError ex) {
                                         throw new Failure("The provider returned an invalid animation: "
                                                 + AiErrors.sanitize(ex.getMessage() == null

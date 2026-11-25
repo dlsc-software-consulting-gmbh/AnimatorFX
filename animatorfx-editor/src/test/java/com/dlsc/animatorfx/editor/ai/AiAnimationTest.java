@@ -1,6 +1,10 @@
 package com.dlsc.animatorfx.editor.ai;
 
+import com.dlsc.animatorfx.importer.SvgImporter;
 import com.dlsc.animatorfx.model.Animation;
+import com.dlsc.animatorfx.model.Asset;
+import com.dlsc.animatorfx.model.ImageLayer;
+import com.dlsc.animatorfx.model.Layers;
 import com.dlsc.animatorfx.model.Geometry;
 import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.Layer;
@@ -16,6 +20,8 @@ import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -152,9 +158,87 @@ class AiAnimationTest {
     @Test
     void unsupportedContentReportsTheKindRatherThanAnUnrelatedUnionBranch() {
         var layer = layer("unsupported", null, rect());
-        obj(layer.get("content")).put("kind", "image");
+        obj(layer.get("content")).put("kind", "video");
         var error = assertThrows(AnimationFormatException.class, () -> parse(document(layer)));
         assertEquals("$.layers[0].content.kind", error.jsonPath());
+    }
+
+    @Test
+    void imageContentPlacesARasterAttachmentAsAnEmbeddedImageLayer() throws Exception {
+        var layer = layer("photo", null, Map.of("kind", "image", "asset", "asset2", "size", vec(100, 50)));
+
+        AnimationFile file = AiAnimation.parse(JsonWriter.write(document(layer)),
+                List.of(svg(), raster("photo.png", new byte[]{1, 2, 3})));
+
+        ImageLayer image = assertInstanceOf(ImageLayer.class, file.animation().layers().getFirst());
+        assertEquals("photo", image.base().id());
+        assertEquals(100, image.width());
+        assertEquals(50, image.height());
+        Asset asset = file.animation().assets().getFirst();
+        assertEquals(1, file.animation().assets().size());
+        assertEquals(image.assetId(), asset.id());
+        assertEquals(Asset.Kind.IMAGE, asset.kind());
+        assertEquals("assets/" + asset.id() + ".png", asset.path());
+        assertEquals("photo.png", asset.name());
+        assertArrayEquals(new byte[]{1, 2, 3}, file.assets().get(asset.id()));
+    }
+
+    @Test
+    void repeatedReferencesShareOneAsset() throws Exception {
+        var one = layer("one", null, Map.of("kind", "image", "asset", "asset1", "size", vec(10, 10)));
+        var two = layer("two", null, Map.of("kind", "image", "asset", "asset1", "size", vec(20, 20)));
+
+        AnimationFile file = AiAnimation.parse(JsonWriter.write(document(one, two)),
+                List.of(raster("a.gif", new byte[]{7})));
+
+        assertEquals(1, file.animation().assets().size());
+        assertEquals(1, file.assets().size());
+    }
+
+    @Test
+    void vectorContentImportsTheSvgFittedAndRetimedToTheLayer() throws Exception {
+        var layer = layer("logo", null, Map.of("kind", "vector", "asset", "asset1", "size", vec(60, 60)));
+        layer.put("inPoint", 0.5);
+        layer.put("outPoint", 2.5);
+
+        AnimationFile file = AiAnimation.parse(JsonWriter.write(document(layer)), List.of(svg()));
+
+        GroupLayer group = assertInstanceOf(GroupLayer.class, file.animation().layers().getFirst());
+        assertEquals("logo", group.base().id());
+        GroupLayer fitted = assertInstanceOf(GroupLayer.class, group.children().getFirst());
+        assertEquals(1, group.children().size());
+        assertEquals(new Vec2(0.5, 0.5), fitted.base().transform().scale().at(0));
+        assertEquals(new Vec2(0, 20), fitted.base().transform().position().at(0));
+        var all = Layers.flatten(file.animation().withLayers(List.of(fitted)));
+        assertTrue(all.stream().anyMatch(ShapeLayer.class::isInstance));
+        assertTrue(all.stream().allMatch(l -> l.base().inPoint() == 0.5 && l.base().outPoint() == 2.5));
+        assertTrue(file.animation().assets().isEmpty());
+    }
+
+    @Test
+    void unreferencedAttachmentsAreNotEmbedded() throws Exception {
+        AnimationFile file = AiAnimation.parse(JsonWriter.write(document(layer("box", null, rect()))),
+                List.of(raster("unused.png", new byte[]{1})));
+
+        assertTrue(file.animation().assets().isEmpty());
+        assertTrue(file.assets().isEmpty());
+    }
+
+    @Test
+    void attachmentReferencesMustExistAndMatchTheirKind() throws Exception {
+        var unknown = layer("a", null, Map.of("kind", "image", "asset", "asset9", "size", vec(10, 10)));
+        var rasterAsVector = layer("a", null, Map.of("kind", "vector", "asset", "asset1", "size", vec(10, 10)));
+        var vectorAsImage = layer("a", null, Map.of("kind", "image", "asset", "asset2", "size", vec(10, 10)));
+        List<AiAttachment> attachments = List.of(raster("a.png", new byte[]{1}), svg());
+
+        for (var layer : List.of(unknown, rasterAsVector, vectorAsImage)) {
+            var error = assertThrows(AnimationFormatException.class,
+                    () -> AiAnimation.parse(JsonWriter.write(document(layer)), attachments));
+            assertEquals("$.layers[0].content.asset", error.jsonPath());
+        }
+        var error = assertThrows(AnimationFormatException.class,
+                () -> AiAnimation.parse(JsonWriter.write(document(unknown))));
+        assertEquals("$.layers[0].content.asset", error.jsonPath());
     }
 
     @Test
@@ -281,6 +365,19 @@ class AiAnimationTest {
             ((List<?>) schema.get("anyOf")).forEach(p -> inspectSchema(obj(p), definitions, ancestors));
         }
         assertTrue(schema.containsKey("description"), schema.toString());
+    }
+
+    private static AiAttachment raster(String name, byte[] bytes) {
+        return new AiAttachment(name, AiAttachment.Kind.RASTER, name.substring(name.lastIndexOf('.') + 1), bytes,
+                200, 100, new byte[]{0}, null);
+    }
+
+    private static AiAttachment svg() throws Exception {
+        String svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"40\">"
+                + "<rect width=\"120\" height=\"40\" fill=\"#00f\"/></svg>";
+        byte[] bytes = svg.getBytes(StandardCharsets.UTF_8);
+        AnimationFile file = SvgImporter.read(new ByteArrayInputStream(bytes), "logo.svg").file();
+        return new AiAttachment("logo.svg", AiAttachment.Kind.VECTOR, "svg", bytes, 120, 40, new byte[]{0}, file);
     }
 
     private static AnimationFile parse(Map<String, Object> document)

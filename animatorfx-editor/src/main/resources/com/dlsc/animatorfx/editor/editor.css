@@ -228,6 +228,58 @@
     -fx-padding: 8px 10px;
 }
 
+.ai-attachments {
+    -fx-background-color: -afx-line, -afx-panel-alt;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 6px, 5px;
+    -fx-padding: 10px;
+}
+
+.ai-attachments-title {
+    -fx-font-weight: bold;
+}
+
+.ai-attachments-hint {
+    -fx-text-fill: -afx-muted;
+    -fx-font-size: 11px;
+}
+
+.ai-attachment-chip {
+    -fx-background-color: -afx-line, -afx-bg;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 6px, 5px;
+    -fx-padding: 4px 4px 4px 6px;
+}
+
+.ai-attachment-name {
+    -fx-font-size: 12px;
+}
+
+.ai-attachment-size {
+    -fx-text-fill: -afx-muted;
+    -fx-font-size: 10px;
+}
+
+.ai-attachment-remove {
+    -fx-background-color: transparent;
+    -fx-padding: 2px;
+    -fx-cursor: hand;
+}
+
+.ai-attachment-remove .ikonli-font-icon {
+    -fx-icon-size: 14;
+    -fx-icon-color: -afx-muted;
+}
+
+.ai-attachment-remove:hover .ikonli-font-icon {
+    -fx-icon-color: -afx-fg;
+}
+
+.ai-attachment-error {
+    -fx-text-fill: -afx-danger;
+    -fx-font-size: 11px;
+}
+
 .ai-chat-provider {
     -fx-font-weight: bold;
     -fx-graphic-text-gap: 6px;

@@ -1,5 +1,6 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.ai.AiAttachment;
 import com.dlsc.animatorfx.editor.ai.AiErrors;
 import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.ai.AiUsage;
@@ -21,7 +22,8 @@ import java.util.function.Supplier;
 final class AiActions {
     @FunctionalInterface
     interface Generator {
-        CompletableFuture<AnimationFile> start(AiSettings settings, String prompt, AiUsage usage);
+        CompletableFuture<AnimationFile> start(AiSettings settings, String prompt, List<AiAttachment> attachments,
+                                               AiUsage usage);
     }
 
     private final DialogLayer layer;
@@ -51,7 +53,7 @@ final class AiActions {
         description.setPromptText("Describe the animation or scene (up to 8,000 characters)");
         description.setWrapText(true);
         description.setPrefRowCount(6);
-        Label disclosure = new Label("Your description will be sent to the selected AI provider. "
+        Label disclosure = new Label("Your description and attachments will be sent to the selected AI provider. "
                 + "Provider charges may apply.");
         disclosure.setWrapText(true);
         String provider = switch (selected.provider()) {
@@ -61,7 +63,8 @@ final class AiActions {
         Label model = new Label("Provider: " + provider + "  ·  Model: " + selected.model());
         model.setId("ai-generation-model");
         model.setWrapText(true);
-        VBox content = new VBox(12, model, disclosure, description);
+        AiAttachmentsView view = new AiAttachmentsView();
+        VBox content = new VBox(12, model, disclosure, description, view);
         ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
         ButtonType generate = new ButtonType("Generate", ButtonBar.ButtonData.OK_DONE);
         DialogPane.Dialog<Void> dialog = layer.dialog(DialogPane.Type.CONFIRMATION, "Generate Animation",
@@ -69,8 +72,9 @@ final class AiActions {
         if (layer.show(dialog, button -> {
             if (button == generate) {
                 String prompt = description.getText().trim();
+                List<AiAttachment> attachments = List.copyOf(view.getAttachments());
                 if (!prompt.isEmpty()) Platform.runLater(() -> {
-                    if (!disposed) notifications.start(selected, prompt, generator);
+                    if (!disposed) notifications.start(selected, prompt, attachments, generator);
                 });
             }
         })) {

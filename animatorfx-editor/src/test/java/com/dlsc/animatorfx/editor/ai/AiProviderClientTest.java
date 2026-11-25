@@ -1,5 +1,7 @@
 package com.dlsc.animatorfx.editor.ai;
 
+import com.dlsc.animatorfx.model.Animation;
+import com.dlsc.animatorfx.model.io.AnimationFile;
 import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,35 @@ class AiProviderClientTest {
             assertEquals(45, snapshot.outputTokens());
             assertTrue(snapshot.inputComplete());
             assertTrue(snapshot.outputComplete());
+        }
+    }
+
+    @Test
+    void generationSendsAttachmentPreviewsAndAManifest() throws Exception {
+        try (ServerSocket server = new ServerSocket(0)) {
+            String completed = "{\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":["
+                    + "{\"type\":\"output_text\",\"text\":\"{}\"}]}]}";
+            var request = serve(server, 200, completed);
+            var logo = new AiAttachment("logo.svg", AiAttachment.Kind.VECTOR, "svg", new byte[] {1}, 120, 40,
+                    new byte[] {9, 9}, new AnimationFile(Animation.create("logo", 120, 40, 3), Map.of()));
+            var photo = new AiAttachment("photo.png", AiAttachment.Kind.RASTER, "png", new byte[] {2}, 800, 600,
+                    new byte[] {8, 8}, null);
+
+            client(server).generate(AiProviderClient.Provider.OPENAI, "model", "key", "scene", Map.of(), null,
+                    List.of(logo, photo)).get(5, TimeUnit.SECONDS);
+
+            String sent = request.get(5, TimeUnit.SECONDS);
+            assertEquals(2, sent.split("input_image", -1).length - 1);
+            assertTrue(sent.contains(Base64.getEncoder().encodeToString(new byte[] {9, 9})));
+            assertTrue(sent.contains("asset1: logo.svg (vector, 120x40 px)"), sent);
+            assertTrue(sent.contains("asset2: photo.png (raster, 800x600 px)"), sent);
+
+            request = serve(server, 200, completed);
+            client(server).generate(AiProviderClient.Provider.OPENAI, "model", "key", "scene", Map.of())
+                    .get(5, TimeUnit.SECONDS);
+            sent = request.get(5, TimeUnit.SECONDS);
+            assertFalse(sent.contains("input_image"));
+            assertTrue(sent.contains("No attachments are available"), sent);
         }
     }
 

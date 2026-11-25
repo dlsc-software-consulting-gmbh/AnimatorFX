@@ -10,7 +10,6 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.image.PixelFormat;
 import javafx.scene.image.Image;
-import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.scene.transform.Scale;
 
@@ -90,15 +89,7 @@ public final class AiPreviewFrames {
                 for (double time : new double[]{0, last / 2, last}) {
                     if (result.isDone()) return;
                     renderer.apply(Evaluator.sample(animation, time));
-                    WritableImage image = renderer.getRoot().snapshot(parameters, null);
-                    int[] pixels = new int[width * height];
-                    image.getPixelReader().getPixels(0, 0, width, height, PixelFormat.getIntArgbInstance(),
-                            pixels, 0, width);
-                    BufferedImage buffered = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-                    buffered.setRGB(0, 0, width, height, pixels, 0, width);
-                    var output = new ByteArrayOutputStream();
-                    if (!ImageIO.write(buffered, "png", output)) throw new IllegalStateException("PNG unavailable");
-                    frames.add(output.toByteArray());
+                    frames.add(png(renderer.getRoot().snapshot(parameters, null)));
                 }
                 result.complete(List.copyOf(frames));
             } catch (Exception ex) {
@@ -114,5 +105,17 @@ public final class AiPreviewFrames {
             result.completeExceptionally(ex);
         }
         return result;
+    }
+
+    static byte[] png(Image image) throws java.io.IOException {
+        int width = (int) image.getWidth();
+        int height = (int) image.getHeight();
+        int[] pixels = new int[width * height];
+        image.getPixelReader().getPixels(0, 0, width, height, PixelFormat.getIntArgbInstance(), pixels, 0, width);
+        BufferedImage buffered = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        buffered.setRGB(0, 0, width, height, pixels, 0, width);
+        var output = new ByteArrayOutputStream();
+        if (!ImageIO.write(buffered, "png", output)) throw new IllegalStateException("PNG unavailable");
+        return output.toByteArray();
     }
 }
