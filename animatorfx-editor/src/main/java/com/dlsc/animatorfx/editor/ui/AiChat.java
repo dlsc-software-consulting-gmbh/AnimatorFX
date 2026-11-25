@@ -7,11 +7,17 @@ import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.model.Animation;
+import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.value.ChangeListener;
 import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -19,8 +25,14 @@ import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
+import org.kordamp.ikonli.bootstrapicons.BootstrapIcons;
+import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.material2.Material2AL;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -43,15 +55,19 @@ final class AiChat extends VBox {
     private final Consumer<String> activity;
     private final Map<EditorDocument, List<AiEdits.Message>> conversations = new IdentityHashMap<>();
     private final Map<EditorDocument, Map<AiEdits.Message, AiFeedback>> feedback = new IdentityHashMap<>();
-    private final TextArea transcript = new TextArea();
-    private final VBox feedbackCards = new VBox(8);
-    private final ScrollPane feedbackScroll = new ScrollPane(feedbackCards);
+    private final VBox transcript = new VBox(8);
+    private final ScrollPane conversation = new ScrollPane(transcript);
+    private final Label placeholder = new Label("Describe a change to the current project.");
     private final TextArea input = new TextArea();
     private final Label provider = new Label();
+    private final Label model = new Label();
+    private final Tooltip modelTip = new Tooltip();
     private final Label document = new Label();
     private final Button send = new Button("Send");
     private final Button cancel = new Button("Cancel");
     private final Button clear = new Button("Clear");
+    private final HBox typing = new HBox(4);
+    private final Timeline typingAnimation = new Timeline();
     private Pending active;
     private boolean disposed;
     private final ChangeListener<EditorDocument> documentChanged = (obs, oldDoc, newDoc) -> {
@@ -91,15 +107,20 @@ final class AiChat extends VBox {
         this.activity = activity;
         setSpacing(8);
         setPadding(new Insets(10));
-        provider.setWrapText(true);
-        document.setWrapText(true);
-        Label disclosure = new Label("Project content and recent chat are sent to the provider. Charges may apply.");
-        disclosure.setWrapText(true);
+        VBox context = context();
+        buildTypingIndicator();
         transcript.setId("ai-chat-transcript");
-        transcript.setEditable(false);
-        transcript.setWrapText(true);
-        transcript.setPromptText("Describe a change to the current project.");
-        VBox.setVgrow(transcript, Priority.ALWAYS);
+        transcript.setPadding(new Insets(8));
+        conversation.setId("ai-chat-conversation");
+        conversation.setFitToWidth(true);
+        conversation.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        placeholder.getStyleClass().add("ai-chat-placeholder");
+        placeholder.setWrapText(true);
+        placeholder.setMouseTransparent(true);
+        StackPane history = new StackPane(conversation, placeholder);
+        StackPane.setAlignment(placeholder, Pos.TOP_LEFT);
+        StackPane.setMargin(placeholder, new Insets(10));
+        VBox.setVgrow(history, Priority.ALWAYS);
         input.setId("ai-chat-input");
         input.setWrapText(true);
         input.setPrefRowCount(3);
@@ -122,38 +143,118 @@ final class AiChat extends VBox {
             removeFeedback(workspace.getActiveDocument());
             refresh();
         });
-        feedbackScroll.setFitToWidth(true);
-        feedbackScroll.setPrefViewportHeight(180);
-        feedbackScroll.setMaxHeight(240);
-        feedbackScroll.setId("ai-feedback");
         HBox buttons = new HBox(6, send, cancel, clear);
-        getChildren().addAll(provider, document, disclosure, transcript, feedbackScroll, input, buttons);
+        getChildren().addAll(context, history, input, buttons);
         workspace.activeDocumentProperty().addListener(documentChanged);
         workspace.getDocuments().addListener(documentsChanged);
         refresh();
     }
 
+    // provider and model, project and the data disclosure, as one card above the conversation
+    private VBox context() {
+        provider.setId("ai-chat-provider");
+        provider.getStyleClass().add("ai-chat-provider");
+        provider.setGraphic(new FontIcon(BootstrapIcons.STARS));
+        provider.setMinWidth(Region.USE_PREF_SIZE);
+        model.setId("ai-chat-model");
+        model.getStyleClass().addAll("ai-chat-model", "mono");
+        model.setMinWidth(0);
+        model.setTooltip(modelTip);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox providerRow = new HBox(6, provider, spacer, model);
+        providerRow.setAlignment(Pos.CENTER_LEFT);
+        document.setId("ai-chat-project");
+        document.getStyleClass().add("ai-chat-project");
+        document.setGraphic(new FontIcon(Material2AL.DESCRIPTION));
+        Region divider = new Region();
+        divider.getStyleClass().add("ai-chat-context-divider");
+        Label disclosure = new Label("Project content and recent chat are sent to the provider. Charges may apply.",
+                new FontIcon(Material2AL.INFO));
+        disclosure.getStyleClass().add("ai-chat-disclosure");
+        disclosure.setWrapText(true);
+        VBox card = new VBox(6, providerRow, document, divider, disclosure);
+        card.getStyleClass().add("ai-chat-context");
+        return card;
+    }
+
+    // three dots that bounce one after the other in a reply bubble while the AI works on a reply
+    private void buildTypingIndicator() {
+        typing.setId("ai-chat-typing");
+        typing.getStyleClass().addAll("ai-chat-message", "assistant", "ai-chat-typing");
+        typing.setAlignment(Pos.CENTER_LEFT);
+        typing.setMaxWidth(Region.USE_PREF_SIZE);
+        typing.setAccessibleText("AI is thinking");
+        Duration cycle = Duration.millis(1200);
+        for (int i = 0; i < 3; i++) {
+            Region dot = new Region();
+            dot.getStyleClass().add("ai-chat-typing-dot");
+            dot.setOpacity(0.4);
+            typing.getChildren().add(dot);
+            Duration start = Duration.millis(i * 160);
+            typingAnimation.getKeyFrames().addAll(
+                    new KeyFrame(start, new KeyValue(dot.translateYProperty(), 0), new KeyValue(dot.opacityProperty(), 0.4)),
+                    new KeyFrame(start.add(Duration.millis(220)),
+                            new KeyValue(dot.translateYProperty(), -4, Interpolator.EASE_OUT),
+                            new KeyValue(dot.opacityProperty(), 1)),
+                    new KeyFrame(start.add(Duration.millis(440)),
+                            new KeyValue(dot.translateYProperty(), 0, Interpolator.EASE_IN),
+                            new KeyValue(dot.opacityProperty(), 0.4)));
+        }
+        typingAnimation.getKeyFrames().add(new KeyFrame(cycle));
+        typingAnimation.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        VBox.setMargin(typing, new Insets(0, 32, 0, 0));
+    }
+
+    boolean isTyping() {
+        return typingAnimation.getStatus() == javafx.animation.Animation.Status.RUNNING;
+    }
+
     void refresh() {
         EditorDocument current = workspace.getActiveDocument();
-        document.setText(current == null ? "No project open" : "Project: " + current.getTitle());
+        document.setText(current == null ? "No project open" : current.getTitle());
+        document.setAccessibleText(current == null ? "No project open" : "Project: " + current.getTitle());
         try {
             AiSettings selected = settings.get();
-            provider.setText("Provider: " + selected.provider() + "  ·  Model: " + selected.model());
+            provider.setText(String.valueOf(selected.provider()));
+            model.setText(selected.model());
         } catch (RuntimeException ex) {
             provider.setText("AI preferences are unavailable.");
+            model.setText("");
         }
-        StringBuilder text = new StringBuilder();
-        for (AiEdits.Message message : conversations.getOrDefault(current, List.of())) {
-            text.append(message.role().equals("user") ? "You: " : "AI: ").append(message.text()).append("\n\n");
-        }
-        transcript.setText(text.toString());
-        transcript.positionCaret(text.length());
+        provider.setAccessibleText("Provider: " + provider.getText());
+        model.setAccessibleText("Model: " + model.getText());
+        modelTip.setText(model.getText());
+        model.setVisible(!model.getText().isEmpty());
         Map<AiEdits.Message, AiFeedback> cardByMessage = feedback.getOrDefault(current, Map.of());
-        List<AiFeedback> cards = conversations.getOrDefault(current, List.of()).stream()
-                .map(cardByMessage::get).filter(java.util.Objects::nonNull).toList();
-        feedbackCards.getChildren().setAll(cards);
-        feedbackScroll.setVisible(!cards.isEmpty());
-        feedbackScroll.setManaged(!cards.isEmpty());
+        List<Node> entries = new ArrayList<>();
+        for (AiEdits.Message message : conversations.getOrDefault(current, List.of())) {
+            boolean user = message.role().equals("user");
+            Label bubble = new Label(message.text());
+            bubble.setWrapText(true);
+            bubble.setMaxWidth(Double.MAX_VALUE);
+            bubble.getStyleClass().addAll("ai-chat-message", user ? "user" : "assistant");
+            bubble.setAccessibleText((user ? "You: " : "AI: ") + message.text());
+            AiFeedback card = cardByMessage.get(message);
+            if (card == null) {
+                VBox.setMargin(bubble, user ? new Insets(0, 0, 0, 32) : new Insets(0, 32, 0, 0));
+                entries.add(bubble);
+            } else {
+                // the controls belong to this reply, so both share one box
+                bubble.getStyleClass().add("attached");
+                VBox.setMargin(bubble, Insets.EMPTY);
+                VBox reply = new VBox(bubble, card);
+                reply.getStyleClass().add("ai-chat-reply");
+                VBox.setMargin(reply, new Insets(0, 32, 0, 0));
+                entries.add(reply);
+            }
+        }
+        boolean waiting = !disposed && active != null && active.document == current;
+        if (waiting) entries.add(typing);
+        transcript.getChildren().setAll(entries);
+        if (waiting) typingAnimation.play(); else typingAnimation.stop();
+        placeholder.setVisible(entries.isEmpty());
+        conversation.setVvalue(1);
         updateControls();
     }
 
@@ -196,7 +297,7 @@ final class AiChat extends VBox {
         Pending pending = new Pending(target, snapshot, future, context);
         active = pending;
         target.animationProperty().addListener(pending.changed);
-        updateControls();
+        refresh();
         future.whenComplete((result, failure) -> Platform.runLater(() -> finish(pending, result, failure)));
     }
 

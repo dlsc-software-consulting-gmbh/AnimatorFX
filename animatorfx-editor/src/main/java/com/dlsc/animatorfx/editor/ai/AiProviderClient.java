@@ -82,9 +82,14 @@ public final class AiProviderClient {
 
     public CompletableFuture<String> generate(Provider provider, String model, String apiKey, String prompt,
                                               Map<String, Object> schema) {
+        return generate(provider, model, apiKey, prompt, schema, null);
+    }
+
+    public CompletableFuture<String> generate(Provider provider, String model, String apiKey, String prompt,
+                                              Map<String, Object> schema, AiUsage usage) {
         return send(provider, model, apiKey, prompt, schema, INSTRUCTIONS, 160_000,
                 List.of(), GENERATION_TIMEOUT, GENERATION_TIMEOUT,
-                provider == Provider.ANTHROPIC && "claude-opus-5-5".equals(model) ? 64000 : 16384);
+                provider == Provider.ANTHROPIC && "claude-opus-5-5".equals(model) ? 64000 : 16384, usage);
     }
 
     /**
@@ -95,6 +100,12 @@ public final class AiProviderClient {
      */
     public CompletableFuture<String> review(Provider provider, String model, String apiKey, String context,
                                             List<byte[]> pngFrames, Map<String, Object> schema, String instructions) {
+        return review(provider, model, apiKey, context, pngFrames, schema, instructions, null);
+    }
+
+    public CompletableFuture<String> review(Provider provider, String model, String apiKey, String context,
+                                            List<byte[]> pngFrames, Map<String, Object> schema, String instructions,
+                                            AiUsage usage) {
         if (pngFrames == null || pngFrames.isEmpty() || pngFrames.size() > 3
                 || instructions == null || instructions.isBlank()) {
             return CompletableFuture.failedFuture(new AiErrors.Detail("Check the visual review frames and instructions."));
@@ -109,19 +120,19 @@ public final class AiProviderClient {
             images.add(Base64.getEncoder().encodeToString(frame));
         }
         return send(provider, model, apiKey, context, schema, instructions, 400_000,
-                images, REQUEST_TIMEOUT, OVERALL_TIMEOUT, 16384);
+                images, REQUEST_TIMEOUT, OVERALL_TIMEOUT, 16384, usage);
     }
 
     private CompletableFuture<String> send(Provider provider, String model, String apiKey, String prompt,
                                            Map<String, Object> schema, String baseInstructions, int promptLimit) {
         return send(provider, model, apiKey, prompt, schema, baseInstructions, promptLimit,
-                List.of(), REQUEST_TIMEOUT, OVERALL_TIMEOUT, 16384);
+                List.of(), REQUEST_TIMEOUT, OVERALL_TIMEOUT, 16384, null);
     }
 
     private CompletableFuture<String> send(Provider provider, String model, String apiKey, String prompt,
                                            Map<String, Object> schema, String baseInstructions, int promptLimit,
                                            List<String> images, Duration requestTimeout, Duration overallTimeout,
-                                           int maxTokens) {
+                                           int maxTokens, AiUsage usage) {
         if (provider == null || model == null || model.isBlank() || model.length() > 200
                 || apiKey == null || apiKey.isBlank() || apiKey.length() > 1000
                 || prompt == null || prompt.isBlank() || prompt.length() > promptLimit || schema == null) {
@@ -136,7 +147,7 @@ public final class AiProviderClient {
                     ? baseInstructions + " Return the complete result as JSON text in the animation string property. "
                         + "The result JSON must conform to this schema:\n" + JsonWriter.write(schema)
                     : baseInstructions;
-            BoundedClientBuilder transport = new BoundedClientBuilder(provider, apiKey, prompt, images, requestTimeout);
+            BoundedClientBuilder transport = new BoundedClientBuilder(provider, apiKey, prompt, images, requestTimeout, usage);
             ChatModel chatModel = provider == Provider.OPENAI
                     ? OpenAiResponsesChatModel.builder().baseUrl(openAi.toString()).apiKey(apiKey)
                         .modelName(model).responseFormat(format).strictJsonSchema(true).store(false)
@@ -194,17 +205,19 @@ public final class AiProviderClient {
         private final String prompt;
         private final List<String> images;
         private final Duration requestTimeout;
+        private final AiUsage usage;
         private volatile CompletableFuture<?> active;
         private Duration connectTimeout = Duration.ofSeconds(15);
         private Duration readTimeout = Duration.ofSeconds(90);
 
         private BoundedClientBuilder(Provider provider, String key, String prompt, List<String> images,
-                                     Duration requestTimeout) {
+                                     Duration requestTimeout, AiUsage usage) {
             this.provider = provider;
             this.key = key;
             this.prompt = prompt;
             this.images = images;
             this.requestTimeout = requestTimeout;
+            this.usage = usage;
         }
 
         @Override public Duration connectTimeout() { return connectTimeout; }
@@ -239,11 +252,22 @@ public final class AiProviderClient {
                             ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(request.body()));
                     long logId = AiTrafficLogger.request(provider, request.method().name(),
                             URI.create(request.url()), request.body(), key, images);
-                    var network = client.sendAsync(builder.build(), ignored -> new LimitedBodySubscriber());
+                    if (usage != null) usage.begin();
+                    CompletableFuture<HttpResponse<byte[]>> network;
+                    try {
+                        network = client.sendAsync(builder.build(), ignored -> new LimitedBodySubscriber());
+                    } catch (RuntimeException ex) {
+                        if (usage != null) usage.record(provider, null);
+                        throw ex;
+                    }
                     active = network;
                     CompletableFuture<SuccessfulHttpResponse> result = new CompletableFuture<>();
                     result.whenComplete((value, error) -> { if (error != null) network.cancel(true); });
                     network.whenComplete((response, error) -> {
+                        if (usage != null) {
+                            usage.record(provider, response == null ? null
+                                    : new String(response.body(), StandardCharsets.UTF_8));
+                        }
                         if (error != null) {
                             AiTrafficLogger.failed(logId, error, key, images);
                             result.completeExceptionally(new AiErrors.Detail(AiErrors.message(error)));

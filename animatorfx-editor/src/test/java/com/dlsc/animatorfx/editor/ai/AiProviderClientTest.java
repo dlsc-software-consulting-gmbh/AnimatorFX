@@ -27,6 +27,152 @@ import static org.junit.jupiter.api.Assertions.*;
 class AiProviderClientTest {
 
     @Test
+    void generationCollectsProviderReportedTokens() throws Exception {
+        AiUsage usage = new AiUsage();
+        try (ServerSocket server = new ServerSocket(0)) {
+            serve(server, 200, "{\"status\":\"completed\",\"usage\":{\"input_tokens\":123,"
+                    + "\"output_tokens\":45},\"output\":[{\"type\":\"message\",\"content\":["
+                    + "{\"type\":\"output_text\",\"text\":\"{}\"}]}]}");
+            var result = client(server).generate(AiProviderClient.Provider.OPENAI, "model", "key", "scene",
+                    Map.of(), usage);
+            assertEquals("{}", result.get(5, TimeUnit.SECONDS));
+            AiUsage.Snapshot snapshot = usage.snapshot();
+            assertEquals(123, snapshot.inputTokens());
+            assertEquals(45, snapshot.outputTokens());
+            assertTrue(snapshot.inputComplete());
+            assertTrue(snapshot.outputComplete());
+        }
+    }
+
+    @Test
+    void aggregatesAnthropicGenerationAndReviewUsageIncludingCachedInput() throws Exception {
+        AiUsage usage = new AiUsage();
+        try (ServerSocket server = new ServerSocket(0)) {
+            String text = JsonWriter.write(Map.of("animation", "{}"));
+            serve(server, 200, JsonWriter.write(Map.of("stop_reason", "end_turn", "content",
+                    List.of(Map.of("type", "text", "text", text)),
+                    "usage", Map.of("input_tokens", 100, "cache_read_input_tokens", 300,
+                            "cache_creation_input_tokens", 20, "output_tokens", 50))));
+            client(server).generate(AiProviderClient.Provider.ANTHROPIC, "model", "key", "scene",
+                    Map.of(), usage).get(5, TimeUnit.SECONDS);
+            serve(server, 200, JsonWriter.write(Map.of("stop_reason", "end_turn", "content",
+                    List.of(Map.of("type", "text", "text", text)),
+                    "usage", Map.of("input_tokens", 80, "output_tokens", 10))));
+            client(server).review(AiProviderClient.Provider.ANTHROPIC, "model", "key", "review",
+                    List.of(new byte[] {1}), Map.of(), "review", usage).get(5, TimeUnit.SECONDS);
+            AiUsage.Snapshot snapshot = usage.snapshot();
+            assertEquals(500, snapshot.inputTokens());
+            assertEquals(60, snapshot.outputTokens());
+            assertEquals(2, snapshot.requests());
+            assertTrue(snapshot.inputComplete());
+            assertTrue(snapshot.outputComplete());
+        }
+    }
+
+    @Test
+    void incompleteProviderUsageIsNotReportedAsAnExactTotal() throws Exception {
+        AiUsage usage = new AiUsage();
+        try (ServerSocket server = new ServerSocket(0)) {
+            serve(server, 200, "{\"status\":\"completed\",\"usage\":{\"input_tokens\":123},"
+                    + "\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"{}\"}]}]}");
+            client(server).generate(AiProviderClient.Provider.OPENAI, "model", "key", "scene",
+                    Map.of(), usage).get(5, TimeUnit.SECONDS);
+            AiUsage.Snapshot snapshot = usage.snapshot();
+            assertEquals(123, snapshot.inputTokens());
+            assertTrue(snapshot.inputComplete());
+            assertFalse(snapshot.outputComplete());
+        }
+    }
+
+    @Test
+    void concurrentGenerationRequestsKeepTokenUsageSeparate() throws Exception {
+        AiUsage first = new AiUsage();
+        AiUsage second = new AiUsage();
+        try (ServerSocket firstServer = new ServerSocket(0); ServerSocket secondServer = new ServerSocket(0)) {
+            serve(firstServer, 200, anthropicResponseWithUsage("{}", 100, 10));
+            serve(secondServer, 200, anthropicResponseWithUsage("{}", 200, 20));
+            var one = client(firstServer).generate(AiProviderClient.Provider.ANTHROPIC, "model", "key",
+                    "first", Map.of(), first);
+            var two = client(secondServer).generate(AiProviderClient.Provider.ANTHROPIC, "model", "key",
+                    "second", Map.of(), second);
+            CompletableFuture.allOf(one, two).get(5, TimeUnit.SECONDS);
+            assertEquals(100, first.snapshot().inputTokens());
+            assertEquals(10, first.snapshot().outputTokens());
+            assertEquals(200, second.snapshot().inputTokens());
+            assertEquals(20, second.snapshot().outputTokens());
+        }
+    }
+
+    @Test
+    void inFlightRequestsMakeUsageIncompleteUntilTheyFinish() throws Exception {
+        AiUsage usage = new AiUsage();
+        try (ServerSocket server = new ServerSocket(0)) {
+            var accepted = new java.util.concurrent.CountDownLatch(1);
+            var release = new java.util.concurrent.CountDownLatch(1);
+            var listener = CompletableFuture.runAsync(() -> {
+                try (var socket = server.accept()) {
+                    accepted.countDown();
+                    release.await(5, TimeUnit.SECONDS);
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            });
+            var future = client(server).generate(AiProviderClient.Provider.OPENAI, "model", "key",
+                    "scene", Map.of(), usage);
+            try {
+                assertTrue(accepted.await(5, TimeUnit.SECONDS));
+                AiUsage.Snapshot snapshot = usage.snapshot();
+                assertEquals(1, snapshot.requests());
+                assertFalse(snapshot.inputComplete());
+                assertFalse(snapshot.outputComplete());
+            } finally {
+                future.cancel(true);
+                release.countDown();
+                listener.get(5, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    @Test
+    void generationRepairsAndVisualReviewAccumulateTheSameJobsUsage(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        String valid = """
+                {"version":1,"name":"Mock","width":320,"height":240,"frameRate":30,"duration":1,
+                 "background":{"r":0,"g":0,"b":0,"a":0},"layers":[]}
+                """;
+        AiUsage usage = new AiUsage();
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        try (ServerSocket server = new ServerSocket(0)) {
+            AiProviderClient client = client(server);
+            AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), ignored -> "key",
+                    (provider, model, key, prompt) -> {
+                        int call = calls.incrementAndGet();
+                        serve(server, 200, anthropicResponseWithUsage(call == 1 ? "{}" : valid, call * 100, call * 10));
+                        return client.generate(provider, model, key, prompt, AiAnimation.schema(), usage);
+                    },
+                    (provider, model, key, context, frames, schema, instructions) -> {
+                        serve(server, 200, anthropicResponseWithUsage(
+                                "{\"reply\":\"Looks good\",\"operations\":[]}", 300, 30));
+                        return client.review(provider, model, key, context, frames, schema, instructions, usage);
+                    }, file -> CompletableFuture.completedFuture(List.of(new byte[] {1})), ignored -> {});
+            AiSettings settings = new AiSettings(AiProviderClient.Provider.ANTHROPIC, "unused", "model", true);
+            assertEquals("Mock", service.generate(settings, "scene").get(5, TimeUnit.SECONDS).animation().name());
+            AiUsage.Snapshot snapshot = usage.snapshot();
+            assertEquals(3, snapshot.requests());
+            assertEquals(600, snapshot.inputTokens());
+            assertEquals(60, snapshot.outputTokens());
+            assertTrue(snapshot.inputComplete());
+            assertTrue(snapshot.outputComplete());
+        }
+    }
+
+    private static String anthropicResponseWithUsage(String animation, int input, int output) {
+        return JsonWriter.write(Map.of("stop_reason", "end_turn", "content",
+                List.of(Map.of("type", "text", "text", JsonWriter.write(Map.of("animation", animation)))),
+                "usage", Map.of("input_tokens", input, "output_tokens", output)));
+    }
+
+    @Test
     @EnabledIfSystemProperty(named = "animatorfx.slowAiTests", matches = "true")
     void generationAcceptsSlowResponsesFromBothProvidersBeforeAndAfterHeaders() throws Exception {
         var release = new java.util.concurrent.CountDownLatch(1);

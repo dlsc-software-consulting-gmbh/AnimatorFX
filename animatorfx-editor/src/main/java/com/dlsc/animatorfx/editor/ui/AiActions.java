@@ -2,7 +2,7 @@ package com.dlsc.animatorfx.editor.ui;
 
 import com.dlsc.animatorfx.editor.ai.AiErrors;
 import com.dlsc.animatorfx.editor.ai.AiSettings;
-import com.dlsc.animatorfx.editor.doc.EditorDocument;
+import com.dlsc.animatorfx.editor.ai.AiUsage;
 import com.dlsc.animatorfx.model.io.AnimationFile;
 import com.dlsc.gemsfx.DialogPane;
 import javafx.application.Platform;
@@ -10,38 +10,31 @@ import javafx.beans.binding.Bindings;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
-import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.VBox;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 final class AiActions {
-    private final DialogLayer layer;
-    private final Workspace workspace;
-    private final Supplier<AiSettings> settings;
-    private final BiFunction<AiSettings, String, CompletableFuture<AnimationFile>> generator;
-    private final Consumer<String> activity;
-    private CompletableFuture<AnimationFile> active;
-    private boolean disposed;
-
-    AiActions(DialogLayer layer, Workspace workspace, Supplier<AiSettings> settings,
-              BiFunction<AiSettings, String, CompletableFuture<AnimationFile>> generator) {
-        this(layer, workspace, settings, generator, ignored -> {});
+    @FunctionalInterface
+    interface Generator {
+        CompletableFuture<AnimationFile> start(AiSettings settings, String prompt, AiUsage usage);
     }
 
-    AiActions(DialogLayer layer, Workspace workspace, Supplier<AiSettings> settings,
-              BiFunction<AiSettings, String, CompletableFuture<AnimationFile>> generator, Consumer<String> activity) {
+    private final DialogLayer layer;
+    private final AiNotifications notifications;
+    private final Supplier<AiSettings> settings;
+    private final Generator generator;
+    private boolean disposed;
+
+    AiActions(DialogLayer layer, AiNotifications notifications, Supplier<AiSettings> settings, Generator generator) {
         this.layer = layer;
-        this.workspace = workspace;
+        this.notifications = notifications;
         this.settings = settings;
         this.generator = generator;
-        this.activity = activity;
     }
 
     void generate() {
@@ -76,7 +69,9 @@ final class AiActions {
         if (layer.show(dialog, button -> {
             if (button == generate) {
                 String prompt = description.getText().trim();
-                if (!prompt.isEmpty()) Platform.runLater(() -> start(selected, prompt));
+                if (!prompt.isEmpty()) Platform.runLater(() -> {
+                    if (!disposed) notifications.start(selected, prompt, generator);
+                });
             }
         })) {
             dialog.getButton(generate).setId("ai-generate");
@@ -87,54 +82,9 @@ final class AiActions {
         }
     }
 
-    private void start(AiSettings selected, String prompt) {
-        if (disposed) return;
-        String context = selected.provider() + " / " + selected.model();
-        activity.accept("Generation started: " + context);
-        CompletableFuture<AnimationFile> future;
-        try {
-            future = generator.apply(selected, prompt);
-        } catch (RuntimeException ex) {
-            String message = AiErrors.message(ex).replace(prompt, "[redacted]");
-            activity.accept("Generation failed (" + context + "): " + message);
-            error("Unable to start generation: " + message);
-            return;
-        }
-        active = future;
-        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
-        VBox content = new VBox(12, new Label("Generating an editable animation…"), new ProgressIndicator());
-        DialogPane.Dialog<Void> dialog = layer.dialog(DialogPane.Type.INFORMATION, "Generating", content,
-                400, List.of(cancel));
-        if (!layer.show(dialog, ignored -> {
-            if (active == future) active = null;
-            if (future.cancel(true)) activity.accept("Generation cancelled: " + context);
-        })) {
-            active = null;
-            if (future.cancel(true)) activity.accept("Generation cancelled: " + context);
-            return;
-        }
-        dialog.getButton(cancel).setId("ai-cancel-generation");
-        future.whenComplete((file, failure) -> Platform.runLater(() -> {
-            if (disposed || future.isCancelled()) return;
-            dialog.cancel();
-            if (failure != null || file == null) {
-                String message = failure != null ? AiErrors.message(failure)
-                        : "Generation failed. Check your settings and try again.";
-                activity.accept("Generation failed (" + context + "): " + message.replace(prompt, "[redacted]"));
-                Platform.runLater(() -> error(message));
-            } else {
-                workspace.add(EditorDocument.imported(file));
-                activity.accept("Generation completed: " + context);
-            }
-        }));
-    }
-
     void dispose() {
         disposed = true;
-        if (active != null) {
-            active.cancel(true);
-            active = null;
-        }
+        notifications.dispose();
     }
 
     private void error(String message) {

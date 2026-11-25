@@ -20,6 +20,7 @@ import javafx.event.Event;
 import javafx.geometry.Bounds;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.input.KeyCode;
@@ -186,6 +187,25 @@ class MainWindowTest {
 
     private static String text(MainWindow window, String selector) {
         return ((Label) window.getScene().lookup(selector)).getText();
+    }
+
+    @Test
+    void generationHistoryCanBeOpenedFromTheHeader() {
+        MainWindow window = start();
+        run(() -> {
+            assertNull(window.getScene().lookup("#notification-center"));
+            Button button = (Button) window.getScene().lookup("#ai-generations");
+            assertNotNull(button);
+            assertTrue(button.getGraphic() instanceof org.kordamp.ikonli.javafx.FontIcon icon
+                    && icon.getIconCode() == org.kordamp.ikonli.bootstrapicons.BootstrapIcons.STARS);
+            button.fire();
+            assertTrue(javafx.stage.Window.getWindows().stream()
+                    .filter(com.dlsc.gemsfx.PopOver.class::isInstance)
+                    .map(com.dlsc.gemsfx.PopOver.class::cast)
+                    .anyMatch(popover -> popover.isShowing()
+                            && popover.getArrowLocation() == com.dlsc.gemsfx.PopOver.ArrowLocation.TOP_RIGHT
+                            && popover.getContentNode().lookup("#ai-generation-history") != null));
+        });
     }
 
     @Test
@@ -481,6 +501,28 @@ class MainWindowTest {
         assertTrue(saved.maximized());
         assertEquals(1000, saved.width(), 1);
         assertEquals(700, saved.height(), 1);
+    }
+
+    @Test
+    void panelsCanBeHiddenWithTheirCloseButtons() {
+        MainWindow window = start();
+        run(() -> {
+            CheckMenuItem side = (CheckMenuItem) window.menuItem("menu-view-side-panel");
+            CheckMenuItem timeline = (CheckMenuItem) window.menuItem("menu-view-timeline");
+            ((Button) window.getScene().lookup("#side-panel-close")).fire();
+            assertFalse(window.isSidePanelVisible());
+            assertFalse(side.isSelected());
+            assertNull(window.getScene().lookup(".side-panel"));
+            ((Button) window.getScene().lookup("#timeline-close")).fire();
+            assertFalse(window.isTimelineVisible());
+            assertFalse(timeline.isSelected());
+            assertNull(window.getScene().lookup(".timeline-pane"));
+            side.setSelected(true);
+            timeline.setSelected(true);
+            assertNotNull(window.getScene().lookup("#side-panel-close"));
+            assertNotNull(window.getScene().lookup("#timeline-close"));
+        });
+        quit(window);
     }
 
     @Test

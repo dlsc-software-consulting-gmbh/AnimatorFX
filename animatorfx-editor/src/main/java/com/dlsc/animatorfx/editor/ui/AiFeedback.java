@@ -1,12 +1,14 @@
 package com.dlsc.animatorfx.editor.ui;
 
 import com.dlsc.animatorfx.editor.ai.AiEdits;
+import com.dlsc.animatorfx.editor.doc.Command;
 import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Effect;
+import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.Keyframe;
 import com.dlsc.animatorfx.model.Layer;
 import com.dlsc.animatorfx.model.LayerProperties;
@@ -16,7 +18,9 @@ import com.dlsc.animatorfx.model.PropertyRef;
 import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Vec2;
+import atlantafx.base.theme.Styles;
 import javafx.beans.value.ChangeListener;
+import javafx.geometry.Pos;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Button;
@@ -24,10 +28,14 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.material2.Material2MZ;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -51,15 +59,57 @@ final class AiFeedback extends VBox {
         this.document = document;
         this.baseline = result.animation();
         setSpacing(4);
-        Label title = new Label(result.reply().isBlank() ? "AI changes" : result.reply());
-        title.setWrapText(true);
-        getChildren().add(title);
+        getStyleClass().add("ai-feedback");
         Map<String, List<AiEdits.Change>> byLayer = new LinkedHashMap<>();
         for (var change : result.changes()) {
             byLayer.computeIfAbsent(change.layerId(), ignored -> new ArrayList<>()).add(change);
         }
+        getChildren().add(header(byLayer.keySet()));
         byLayer.forEach((id, changes) -> addLayer(id, changes));
         document.animationProperty().addListener(changed);
+    }
+
+    private HBox header(Set<String> ids) {
+        Label title = new Label("Adjust", new FontIcon(Material2MZ.TUNE));
+        title.getStyleClass().add("ai-feedback-title");
+        Label badge = new Label(ids.size() + (ids.size() == 1 ? " layer" : " layers"));
+        badge.setId("ai-feedback-badge");
+        badge.getStyleClass().add("ai-feedback-badge");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button reset = new Button("Reset all", new FontIcon(Material2MZ.RESTORE));
+        reset.setId("ai-feedback-reset");
+        reset.getStyleClass().addAll(Styles.FLAT, Styles.SMALL);
+        reset.setTooltip(new Tooltip("Restore every value to what the AI produced"));
+        reset.setOnAction(event -> resetAll(List.copyOf(ids)));
+        HBox header = new HBox(6, title, badge, spacer, reset);
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.getStyleClass().add("ai-feedback-header");
+        return header;
+    }
+
+    // one undo step; locked or removed layers are left alone, and a group keeps its current children
+    private void resetAll(List<String> ids) {
+        List<String> eligible = ids.stream().filter(this::unlocked).toList();
+        document.execute(new Command() {
+            @Override
+            public String name() {
+                return "Reset AI Changes";
+            }
+
+            @Override
+            public Animation apply(Animation before) {
+                Animation after = before;
+                for (String id : eligible) {
+                    Layer original = Layers.find(baseline, id).orElse(null);
+                    if (original == null) continue;
+                    after = Commands.updateLayer(name(), id, current ->
+                            original instanceof GroupLayer group && current instanceof GroupLayer now
+                                    ? group.withChildren(now.children()) : original).apply(after);
+                }
+                return after;
+            }
+        });
     }
 
     void dispose() {
@@ -79,7 +129,8 @@ final class AiFeedback extends VBox {
 
     private void addLayer(String id, List<AiEdits.Change> changes) {
         Layer original = Layers.find(document.getAnimation(), id).orElse(null);
-        TitledPane pane = new TitledPane(original == null ? "Layer" : original.name(), new VBox());
+        String summary = summary(id, changes);
+        TitledPane pane = new TitledPane(original == null ? "Layer" : original.name() + summary, new VBox());
         pane.setId("ai-feedback-layer-" + id);
         pane.setExpanded(false);
         getChildren().add(pane);
@@ -95,8 +146,43 @@ final class AiFeedback extends VBox {
         });
         refreshers.add(() -> {
             Layer current = Layers.find(document.getAnimation(), id).orElse(null);
-            pane.setText(current == null ? "Layer unavailable" : current.name() + (unlocked(id) ? "" : " (locked)"));
+            pane.setText(current == null ? "Layer unavailable"
+                    : current.name() + summary + (unlocked(id) ? "" : " (locked)"));
         });
+    }
+
+    // " · Drop shadow, Position" for the title of a layer's controls
+    private String summary(String id, List<AiEdits.Change> changes) {
+        Layer layer = Layers.find(baseline, id).orElse(null);
+        Set<String> parts = new LinkedHashSet<>();
+        for (AiEdits.Change change : changes) {
+            String key = change.property();
+            if (key == null) {
+                parts.add("New layer");
+            } else if (key.matches("effects\\[[0-9]+].*")) {
+                int index = Integer.parseInt(key.substring(8, key.indexOf(']')));
+                parts.add(layer != null && index < layer.base().effects().size()
+                        ? words(layer.base().effects().get(index).getClass().getSimpleName()) : "Effect");
+            } else {
+                parts.add(switch (key) {
+                    case "layerName" -> "Name";
+                    case "text" -> "Text";
+                    case "inPoint" -> "In point";
+                    case "outPoint" -> "Out point";
+                    case "fontFamily" -> "Font";
+                    default -> layer == null ? key : LayerProperties.list(layer).stream()
+                            .filter(ref -> ref.key().equals(key)).map(PropertyRef::label)
+                            .findFirst().orElse(key);
+                });
+            }
+        }
+        return parts.isEmpty() ? "" : " · " + String.join(", ", parts);
+    }
+
+    // "DropShadow" -> "Drop shadow"
+    private static String words(String camel) {
+        String spaced = camel.replaceAll("(?<=[a-z])(?=[A-Z])", " ").toLowerCase(java.util.Locale.ROOT);
+        return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
     }
 
     private void buildLayer(VBox rows, String id, List<AiEdits.Change> changes) {

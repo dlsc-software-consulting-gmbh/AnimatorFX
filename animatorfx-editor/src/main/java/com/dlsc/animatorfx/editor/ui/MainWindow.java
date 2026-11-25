@@ -85,6 +85,7 @@ public final class MainWindow {
     private final ImportActions importActions;
     private final ExportActions exportActions;
     private final AiActions aiActions;
+    private final AiGenerationHistory aiGenerationHistory;
     private final AiPreferencesDialog aiPreferences;
     private final ToolBarView toolBar;
     private final ToolRail toolRail = new ToolRail();
@@ -157,10 +158,6 @@ public final class MainWindow {
         this.aiSettings = aiSettings;
         this.readAiKey = readAiKey;
         AiProviderClient aiClient = new AiProviderClient();
-        AiGenerationService generator = new AiGenerationService(aiSettings,
-                readAiKey,
-                (provider, model, key, prompt) -> aiClient.generate(provider, model, key, prompt, AiAnimation.schema()),
-                aiClient::review, message -> Platform.runLater(() -> aiConsole.log(message)));
         Supplier<AiSettings> loadAiSettings = () -> {
             try {
                 return AiSettings.load(aiSettings);
@@ -174,7 +171,17 @@ public final class MainWindow {
                 editor.edit(settings, workspace.getActiveDocument().getFileContent(), selection, time, history, prompt),
                 aiConsole::log);
         aiConsole.installChat(aiChat);
-        aiActions = new AiActions(dialogLayer, workspace, loadAiSettings, generator::generate, aiConsole::log);
+        AiNotifications notifications = new AiNotifications(workspace, aiConsole::log);
+        aiGenerationHistory = new AiGenerationHistory(notifications, theme, this::showAiGeneration);
+        aiActions = new AiActions(dialogLayer, notifications, loadAiSettings, (settings, prompt, usage) -> {
+            AiGenerationService generator = new AiGenerationService(aiSettings, readAiKey,
+                    (provider, model, key, input) -> aiClient.generate(provider, model, key, input,
+                            AiAnimation.schema(), usage),
+                    (provider, model, key, context, frames, schema, instructions) ->
+                            aiClient.review(provider, model, key, context, frames, schema, instructions, usage),
+                    message -> Platform.runLater(() -> aiConsole.log(message)));
+            return generator.generate(settings, prompt);
+        });
         aiPreferences = new AiPreferencesDialog(dialogLayer, aiSettings,
                 putAiKey, deleteAiKey, readAiKey, listModels, () -> {
                     aiChat.refresh();
@@ -182,6 +189,7 @@ public final class MainWindow {
                 });
         HeaderBarView header = new HeaderBarView(
                 new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme, icon, canvasView);
+        header.addGenerationButton(notifications.runningProperty(), aiGenerationHistory::show);
         HeaderBar.systemColorSchemeProperty(stage).bind(Bindings.when(theme.darkProperty())
                 .then(ColorScheme.DARK).otherwise(ColorScheme.LIGHT));
         HeaderBar.systemButtonHeightProperty(stage).bind(header.heightProperty());
@@ -212,7 +220,8 @@ public final class MainWindow {
         content.setTop(new VBox(header, menuBar, toolBar, noticeBar));
         content.setBottom(statusBar);
         // the dialog layer covers everything, an in-window menu bar included
-        StackPane root = new StackPane(content, dialogLayer.getPane());
+        notifications.pane().setContent(content);
+        StackPane root = new StackPane(notifications.pane(), dialogLayer.getPane());
         // no scene size: the stage is sized by the session before it shows
         scene = new Scene(root);
         theme.install(scene);
@@ -276,7 +285,8 @@ public final class MainWindow {
             return false;
         }
         closed = true;
-        runShutdownSteps(List.of(aiActions::dispose, aiChat::dispose, canvasView::dispose, theme::dispose));
+        runShutdownSteps(List.of(aiGenerationHistory::dispose, aiActions::dispose, aiChat::dispose,
+                canvasView::dispose, theme::dispose));
         return true;
     }
 
@@ -526,6 +536,8 @@ public final class MainWindow {
         canvasView.setNotifier(noticeBar::show);
         canvasView.setKeyboardTaken(this::isDialogShowing);
         timelineView.setNotifier(noticeBar::show);
+        timelineView.setOnClose(() -> setTimelineVisible(false));
+        sidePanel.setOnClose(() -> setSidePanelVisible(false));
         timelineView.setSoundImporter(() -> importActions.chooseAndImportCue(timelineView::selectCue));
         sidePanel.getInspector().section(MotionPathSection.class)
                 .ifPresent(section -> section.setActions(canvasView::drawMotionPath, canvasView::editMotionPath));

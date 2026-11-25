@@ -19,6 +19,7 @@ module com.dlsc.animatorfx.editor {
     requires org.kordamp.ikonli.core;
     requires org.kordamp.ikonli.javafx;
     requires org.kordamp.ikonli.material2;
+    requires org.kordamp.ikonli.bootstrapicons;
 
     exports com.dlsc.animatorfx.editor;
     exports com.dlsc.animatorfx.editor.ai;

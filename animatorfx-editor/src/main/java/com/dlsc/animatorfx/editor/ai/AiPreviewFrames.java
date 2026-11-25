@@ -9,6 +9,7 @@ import javafx.application.Platform;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.image.PixelFormat;
+import javafx.scene.image.Image;
 import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.scene.transform.Scale;
@@ -21,8 +22,49 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /** Renders small snapshots without altering the editor's live document or playhead. */
-final class AiPreviewFrames {
+public final class AiPreviewFrames {
     private AiPreviewFrames() {}
+
+    /**
+     * Renders a bounded midpoint thumbnail without changing an editor document.
+     *
+     * @param file the animation to preview
+     * @return the thumbnail, or a failed future when rendering is unavailable
+     */
+    public static CompletableFuture<Image> thumbnail(AnimationFile file) {
+        CompletableFuture<Image> result = new CompletableFuture<>();
+        try {
+            Platform.runLater(() -> {
+                if (result.isDone()) return;
+                Renderer renderer = null;
+                try {
+                    renderer = new Renderer();
+                    if (Layers.flatten(file.animation()).stream().anyMatch(VideoLayer.class::isInstance)) {
+                        throw new IllegalArgumentException("Video previews are unavailable.");
+                    }
+                    var animation = file.animation();
+                    double scale = Math.min(1, 240 / Math.max(animation.width(), animation.height()));
+                    int width = Math.max(1, (int) Math.ceil(animation.width() * scale));
+                    int height = Math.max(1, (int) Math.ceil(animation.height() * scale));
+                    renderer.setDocument(file);
+                    renderer.apply(Evaluator.sample(animation,
+                            Math.max(0, animation.duration() - 1.0 / animation.frameRate()) / 2));
+                    SnapshotParameters parameters = new SnapshotParameters();
+                    parameters.setFill(Color.TRANSPARENT);
+                    parameters.setTransform(new Scale(scale, scale));
+                    parameters.setViewport(new Rectangle2D(0, 0, width, height));
+                    result.complete(renderer.getRoot().snapshot(parameters, null));
+                } catch (Exception | LinkageError ex) {
+                    result.completeExceptionally(ex);
+                } finally {
+                    if (renderer != null) renderer.dispose();
+                }
+            });
+        } catch (RuntimeException ex) {
+            result.completeExceptionally(ex);
+        }
+        return result;
+    }
 
     static CompletableFuture<List<byte[]>> render(AnimationFile file) {
         if (Layers.flatten(file.animation()).stream().anyMatch(VideoLayer.class::isInstance)) {

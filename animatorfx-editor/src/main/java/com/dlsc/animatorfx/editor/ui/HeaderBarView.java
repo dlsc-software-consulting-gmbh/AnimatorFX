@@ -3,6 +3,15 @@ package com.dlsc.animatorfx.editor.ui;
 import com.dlsc.animatorfx.editor.canvas.CanvasView;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import javafx.beans.binding.Bindings;
+import javafx.animation.Animation;
+import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.Timeline;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableBooleanValue;
+import javafx.css.PseudoClass;
+import javafx.util.Duration;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -15,15 +24,20 @@ import javafx.scene.layout.HeaderBar;
 import javafx.scene.layout.HeaderDragType;
 import javafx.scene.layout.HBox;
 import org.kordamp.ikonli.Ikon;
+import org.kordamp.ikonli.bootstrapicons.BootstrapIcons;
 import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.material2.Material2AL;
 import org.kordamp.ikonli.material2.Material2MZ;
+
+import java.util.function.Consumer;
 
 /**
  * The window header: application identity, document tabs, canvas zoom and the theme switch, alongside the
  * system-provided window buttons.
  */
 public final class HeaderBarView extends HeaderBar {
+
+    private static final PseudoClass RUNNING = PseudoClass.getPseudoClass("running");
 
     public HeaderBarView(DocumentTabs tabs, Theme theme, Image icon) {
         this(tabs, theme, icon, null);
@@ -88,6 +102,47 @@ public final class HeaderBarView extends HeaderBar {
             right.getStyleClass().add("toolbar-group");
             setRight(right);
         }
+    }
+
+    void addGenerationButton(ObservableBooleanValue running, Consumer<Button> action) {
+        Button button = generationButton(running, action);
+        if (getRight() instanceof HBox box) {
+            box.getChildren().add(button);
+        } else {
+            setRight(new HBox(getRight(), button));
+        }
+    }
+
+    static Button generationButton(ObservableBooleanValue running, Consumer<Button> action) {
+        FontIcon icon = new FontIcon(BootstrapIcons.STARS);
+        Button button = new Button(null, icon);
+        button.setId("ai-generations");
+        button.getStyleClass().add("icon-button");
+        button.setAccessibleText("AI Generations");
+        button.setTooltip(new Tooltip("AI generation history"));
+        button.setOnAction(event -> action.accept(button));
+        Timeline pulse = new Timeline(
+                new KeyFrame(Duration.ZERO, new KeyValue(icon.opacityProperty(), 1),
+                        new KeyValue(icon.scaleXProperty(), 1), new KeyValue(icon.scaleYProperty(), 1)),
+                new KeyFrame(Duration.millis(700), new KeyValue(icon.opacityProperty(), 0.4, Interpolator.EASE_BOTH),
+                        new KeyValue(icon.scaleXProperty(), 1.2, Interpolator.EASE_BOTH),
+                        new KeyValue(icon.scaleYProperty(), 1.2, Interpolator.EASE_BOTH)));
+        pulse.setAutoReverse(true);
+        pulse.setCycleCount(Animation.INDEFINITE);
+        ChangeListener<Boolean> update = (obs, was, active) -> {
+            button.pseudoClassStateChanged(RUNNING, active);
+            if (active) {
+                pulse.play();
+            } else {
+                pulse.stop();
+                icon.setOpacity(1);
+                icon.setScaleX(1);
+                icon.setScaleY(1);
+            }
+        };
+        running.addListener(update);
+        update.changed(running, false, running.get());
+        return button;
     }
 
     private static void bindZoom(Label zoom, EditorDocument doc) {

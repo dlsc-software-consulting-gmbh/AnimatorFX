@@ -19,11 +19,13 @@ import com.dlsc.animatorfx.model.LayerProperties;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.ComboBox;
 import javafx.event.ActionEvent;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -75,6 +77,42 @@ class AiChatTest {
     }
 
     @Test
+    void typingIndicatorShowsOnlyWhileTheProjectWaitsForAReply() throws Exception {
+        CompletableFuture<AiEdits.Result> response = new CompletableFuture<>();
+        Fixture fixture = fx(() -> new Fixture(response));
+        try {
+            assertNull(fx(() -> fixture.chat.lookup("#ai-chat-typing")));
+            fx(() -> { fixture.send("Add a ball"); return null; });
+            var before = fx(() -> fixture.document.getAnimation());
+            fx(() -> {
+                var transcript = (VBox) fixture.chat.lookup("#ai-chat-transcript");
+                var typing = transcript.getChildren().getLast();
+                assertEquals("ai-chat-typing", typing.getId());
+                assertEquals(3, typing.lookupAll(".ai-chat-typing-dot").size());
+                assertTrue(fixture.chat.isTyping());
+                EditorDocument other = EditorDocument.untitled();
+                fixture.workspace.add(other);
+                fixture.workspace.setActiveDocument(other);
+                assertNull(fixture.chat.lookup("#ai-chat-typing"));
+                assertFalse(fixture.chat.isTyping());
+                fixture.workspace.setActiveDocument(fixture.document);
+                assertNotNull(fixture.chat.lookup("#ai-chat-typing"));
+                return null;
+            });
+            response.complete(new AiEdits.Result("Done.", before));
+            WaitForAsyncUtils.waitForFxEvents();
+            fx(() -> {
+                assertNull(fixture.chat.lookup("#ai-chat-typing"));
+                assertFalse(fixture.chat.isTyping());
+                assertTrue(fixture.transcript().endsWith("Done."));
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
     void rejectsAResponseIfTheDocumentChangedDuringTheRequest() throws Exception {
         CompletableFuture<AiEdits.Result> response = new CompletableFuture<>();
         Fixture fixture = fx(() -> new Fixture(response));
@@ -87,6 +125,26 @@ class AiChatTest {
             WaitForAsyncUtils.waitForFxEvents();
             assertEquals("Manual change", fx(() -> fixture.document.getAnimation().name()));
             assertTrue(fx(fixture::transcript).contains("changed"));
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void contextCardShowsProviderModelProjectAndDisclosure() throws Exception {
+        Fixture fixture = fx(() -> new Fixture(new CompletableFuture<>()));
+        try {
+            fx(() -> {
+                AiSettings defaults = AiSettings.defaults();
+                VBox card = (VBox) fixture.chat.lookup(".ai-chat-context");
+                assertNotNull(card);
+                assertEquals(String.valueOf(defaults.provider()),
+                        ((Label) card.lookup("#ai-chat-provider")).getText());
+                assertEquals(defaults.model(), ((Label) card.lookup("#ai-chat-model")).getText());
+                assertEquals(fixture.document.getTitle(), ((Label) card.lookup("#ai-chat-project")).getText());
+                assertNotNull(card.lookup(".ai-chat-disclosure"));
+                return null;
+            });
         } finally {
             fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
         }
@@ -124,6 +182,22 @@ class AiChatTest {
             fx(() -> {
                 TitledPane layer = (TitledPane) fixture.chat.lookup("#ai-feedback-layer-ball");
                 assertNotNull(layer, "The AI response needs adjustable controls");
+                assertNull(fixture.chat.lookup("#ai-feedback"));
+                var messages = ((VBox) fixture.chat.lookup("#ai-chat-transcript")).getChildren();
+                assertEquals(2, messages.size());
+                assertEquals("Add a shadow", ((Label) messages.get(0)).getText());
+                assertTrue(messages.get(0).getStyleClass().contains("user"));
+                VBox reply = (VBox) messages.get(1);
+                assertTrue(reply.getStyleClass().contains("ai-chat-reply"));
+                assertEquals(2, reply.getChildren().size());
+                assertEquals("Added shadow.", ((Label) reply.getChildren().get(0)).getText());
+                assertTrue(reply.getChildren().get(0).getStyleClass().contains("assistant"));
+                AiFeedback feedback = (AiFeedback) reply.getChildren().get(1);
+                assertTrue(feedback.lookupAll(".label").stream()
+                        .noneMatch(node -> "Added shadow.".equals(((Label) node).getText())),
+                        "The reply text must not be repeated inside the controls");
+                assertEquals("1 layer", ((Label) feedback.lookup("#ai-feedback-badge")).getText());
+                assertEquals("Ball · Drop shadow", layer.getText());
                 layer.setExpanded(true);
                 fixture.chat.applyCss();
                 fixture.chat.layout();
@@ -131,6 +205,13 @@ class AiChatTest {
                 assertNotNull(radius);
                 radius.setText("25");
                 radius.fireEvent(new ActionEvent());
+                assertEquals(25.0, LayerProperties.get(fixture.document.getAnimation().layers().getFirst(),
+                        "effects[0].radius").at(0));
+                ((Button) fixture.chat.lookup("#ai-feedback-reset")).fire();
+                assertEquals(12.0, LayerProperties.get(fixture.document.getAnimation().layers().getFirst(),
+                        "effects[0].radius").at(0));
+                assertEquals("12.0", radius.getText());
+                fixture.document.undo();
                 assertEquals(25.0, LayerProperties.get(fixture.document.getAnimation().layers().getFirst(),
                         "effects[0].radius").at(0));
                 fixture.document.undo();
@@ -549,7 +630,11 @@ class AiChatTest {
         }
 
         String transcript() {
-            return ((TextArea) chat.lookup("#ai-chat-transcript")).getText();
+            return ((VBox) chat.lookup("#ai-chat-transcript")).getChildren().stream()
+                    .map(node -> node.getStyleClass().contains("ai-chat-reply")
+                            ? ((VBox) node).getChildren().getFirst() : node)
+                    .filter(Label.class::isInstance).map(node -> ((Label) node).getText())
+                    .collect(java.util.stream.Collectors.joining("\n"));
         }
     }
 }

@@ -87,6 +87,7 @@ public final class LayerTreeColumn extends Region {
     public static final String ZOOM_IN_ID = "timeline-zoom-in";
     public static final String ZOOM_OUT_ID = "timeline-zoom-out";
     public static final String ZOOM_FIT_ID = "timeline-zoom-fit";
+    public static final String CLOSE_ID = "timeline-close";
 
     private static final PseudoClass SELECTED = PseudoClass.getPseudoClass("selected");
     private static final PseudoClass SLOT = PseudoClass.getPseudoClass("slot");
@@ -140,10 +141,14 @@ public final class LayerTreeColumn extends Region {
         zoomIn.setOnAction(e -> timeline.zoomIn());
         Button fit = button(ZOOM_FIT_ID, Material2MZ.SETTINGS_ETHERNET, "Show the whole duration");
         fit.setOnAction(e -> timeline.zoomToFit());
+        Button close = button(CLOSE_ID, Material2AL.CLOSE, "Hide Timeline");
+        close.getStyleClass().add("panel-close");
+        HBox.setMargin(close, new Insets(0, 0, 0, 6));
+        close.setOnAction(e -> { if (timeline.getOnClose() != null) timeline.getOnClose().run(); });
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         header.getStyleClass().add("timeline-header");
-        header.getChildren().addAll(autoKey, showAll, followSelection, addMarker, spacer, zoomOut, zoomIn, fit);
+        header.getChildren().addAll(autoKey, showAll, followSelection, addMarker, spacer, zoomOut, zoomIn, fit, close);
 
         Label cueTitle = new Label("CUES");
         cueTitle.getStyleClass().add("cue-header-title");

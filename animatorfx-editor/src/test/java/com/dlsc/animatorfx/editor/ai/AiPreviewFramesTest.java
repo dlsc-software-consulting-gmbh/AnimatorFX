@@ -30,6 +30,18 @@ class AiPreviewFramesTest {
     }
 
     @Test
+    void rendersASmallMidpointThumbnailForGenerationHistory() throws Exception {
+        var red = new ShapeLayer(LayerBase.create("Red", 3),
+                new Geometry.Rect(Animatable.of(new Vec2(100, 100)), Animatable.of(0.0)),
+                Animatable.of(new Paint.Solid(new Rgba(1, 0, 0, 1))), null, null);
+        var file = new AnimationFile(Animation.create("Scene", 1000, 500, 3).withLayers(List.of(red)), Map.of());
+        var image = AiPreviewFrames.thumbnail(file).get(10, TimeUnit.SECONDS);
+        assertEquals(240, image.getWidth());
+        assertEquals(120, image.getHeight());
+        assertEquals(0xFFFF0000, image.getPixelReader().getArgb(10, 10));
+    }
+
+    @Test
     void rendersBoundedPngFramesWithTheActualScene() throws Exception {
         var red = new ShapeLayer(LayerBase.create("Red", 3),
                 new Geometry.Rect(Animatable.of(new Vec2(100, 100)), Animatable.of(0.0)),

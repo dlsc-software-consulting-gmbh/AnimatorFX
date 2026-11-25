@@ -81,6 +81,7 @@ public final class TimelineView extends Region {
     private final BooleanProperty followSelection = new SimpleBooleanProperty(this, "followSelection", true);
     private final Palette palette = new Palette();
     private final KeyframeActions keyframeActions = new KeyframeActions(this);
+    private final ObjectProperty<Runnable> onClose = new SimpleObjectProperty<>(this, "onClose");
     private final LayerTreeColumn column = new LayerTreeColumn(this);
     private final TimeRuler ruler = new TimeRuler(this);
     private final MarkerLane markerLane = new MarkerLane(this);
@@ -211,6 +212,23 @@ public final class TimelineView extends Region {
 
     public final void setDocument(EditorDocument value) {
         document.set(value);
+    }
+
+    /**
+     * What the close button of the timeline does, usually hiding the timeline.
+     *
+     * @return the on-close property
+     */
+    public final ObjectProperty<Runnable> onCloseProperty() {
+        return onClose;
+    }
+
+    public final Runnable getOnClose() {
+        return onClose.get();
+    }
+
+    public final void setOnClose(Runnable value) {
+        onClose.set(value);
     }
 
     /**

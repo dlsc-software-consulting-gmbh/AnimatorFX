@@ -150,6 +150,9 @@ class AiConsoleTest {
                     assertTrue(label.getWidth() >= Math.floor(label.prefWidth(-1)));
                     assertTrue(tab.localToScene(tab.getLayoutBounds()).getMaxX() <= clip.getMaxX() + 0.5);
                 }
+                var close = window.getScene().lookup("#side-panel-close");
+                assertTrue(clip.getMaxX() <= close.localToScene(close.getLayoutBounds()).getMinX() + 0.5,
+                        "the tabs reach under the close button");
                 window.getStage().setWidth(900);
                 window.getSidePanel().setActiveTab("ai-console");
                 layout(window);
