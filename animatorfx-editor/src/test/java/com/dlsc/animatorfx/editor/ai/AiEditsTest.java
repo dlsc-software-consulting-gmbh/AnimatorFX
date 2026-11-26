@@ -8,6 +8,7 @@ import com.dlsc.animatorfx.model.Effect;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Geometry;
 import com.dlsc.animatorfx.model.GroupLayer;
+import com.dlsc.animatorfx.model.ImageLayer;
 import com.dlsc.animatorfx.model.LayerBase;
 import com.dlsc.animatorfx.model.LayerProperties;
 import com.dlsc.animatorfx.model.Mask;
@@ -19,8 +20,12 @@ import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 import org.junit.jupiter.api.Test;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Map;
+
+import javax.imageio.ImageIO;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,6 +35,87 @@ class AiEditsTest {
                 new Geometry.Ellipse(Animatable.of(new Vec2(50, 50))),
                 Animatable.of(new Paint.Solid(Rgba.BLACK)), null, null);
         return Animation.create("Scene", 800, 600, 3).withLayers(List.of(shape));
+    }
+
+    @Test
+    void addCanReuseASelectedProjectImageWithoutReturningNewAssetBytes() throws Exception {
+        Asset projectAsset = new Asset("existing-image", Asset.Kind.IMAGE, "assets/existing-image.png",
+                "Existing image");
+        Animation before = scene().withAssets(List.of(projectAsset));
+        Map<String, Object> add = operation("add", null, null,
+                JsonWriter.write(imageFragment("asset1")), null);
+
+        AiEdits.Result result = AiEdits.parse(response(List.of(add)), before,
+                List.of(AiChatAttachment.projectImage(projectAsset, pngBytes())));
+
+        ImageLayer image = assertInstanceOf(ImageLayer.class, result.animation().layers().getLast());
+        assertEquals(projectAsset.id(), image.assetId());
+        assertTrue(result.newAssets().isEmpty());
+        assertEquals(List.of(projectAsset), result.animation().assets());
+    }
+
+    @Test
+    void addReturnsOnlyReferencedExternalRasterBytesAndMetadata() throws Exception {
+        byte[] bytes = pngBytes();
+        AiAttachment raster = new AiAttachment("placed.png", AiAttachment.Kind.RASTER, "png", bytes,
+                2, 2, new byte[]{0}, null);
+        Map<String, Object> add = operation("add", null, null,
+                JsonWriter.write(imageFragment("asset1")), null);
+
+        AiEdits.Result result = AiEdits.parse(response(List.of(add)), scene(),
+                List.of(AiChatAttachment.external(raster)));
+
+        assertEquals(1, result.newAssets().size());
+        assertArrayEquals(bytes, result.newAssets().values().iterator().next());
+        assertEquals(1, result.animation().assets().size());
+        assertEquals("placed.png", result.animation().assets().getFirst().name());
+    }
+
+    @Test
+    void twoAddOperationsShareOneExternalRasterAssetButCreateDistinctLayers() throws Exception {
+        byte[] bytes = pngBytes();
+        AiAttachment raster = new AiAttachment("placed.png", AiAttachment.Kind.RASTER, "png", bytes,
+                2, 2, new byte[]{0}, null);
+        var first = operation("add", null, null, JsonWriter.write(imageFragment("asset1")), null);
+        var secondFragment = AiAnimationTest.document(AiAnimationTest.layer("second-image", null,
+                Map.of("kind", "image", "asset", "asset1", "size", AiAnimationTest.vec(20, 20))));
+        var second = operation("add", null, null, JsonWriter.write(secondFragment), null);
+
+        AiEdits.Result result = AiEdits.parse(response(List.of(first, second)), scene(),
+                List.of(AiChatAttachment.external(raster)));
+
+        assertEquals(1, result.newAssets().size());
+        assertEquals(1, result.animation().assets().size());
+        assertArrayEquals(bytes, result.newAssets().values().iterator().next());
+        ImageLayer one = assertInstanceOf(ImageLayer.class, result.animation().layers().get(1));
+        ImageLayer two = assertInstanceOf(ImageLayer.class, result.animation().layers().get(2));
+        assertNotEquals(one.id(), two.id());
+        assertEquals(one.assetId(), two.assetId());
+        assertEquals(result.animation().assets().getFirst().id(), one.assetId());
+    }
+
+    @Test
+    void absentProjectAttachmentCannotCreateADanglingAsset() throws Exception {
+        Asset missing = new Asset("missing", Asset.Kind.IMAGE, "assets/missing.png", "Missing");
+        var attachment = AiChatAttachment.projectImage(missing, pngBytes());
+        var add = operation("add", null, null, JsonWriter.write(imageFragment("asset1")), null);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> AiEdits.parse(response(List.of(add)), scene(), List.of(attachment)));
+    }
+
+    @Test
+    void addDoesNotReturnUnreferencedExternalAttachmentAssets() throws Exception {
+        AiAttachment raster = new AiAttachment("unused.png", AiAttachment.Kind.RASTER, "png", pngBytes(),
+                2, 2, new byte[]{0}, null);
+        Map<String, Object> add = operation("add", null, null,
+                JsonWriter.write(AiAnimationTest.document(List.of())), null);
+
+        AiEdits.Result result = AiEdits.parse(response(List.of(add)), scene(),
+                List.of(AiChatAttachment.external(raster)));
+
+        assertTrue(result.newAssets().isEmpty());
+        assertTrue(result.animation().assets().isEmpty());
     }
 
     @Test
@@ -407,5 +493,17 @@ class AiEditsTest {
 
     private static String response(List<Map<String, Object>> operations) {
         return JsonWriter.write(Map.of("reply", "Done", "operations", operations));
+    }
+
+    private static Map<String, Object> imageFragment(String assetId) {
+        return AiAnimationTest.document(AiAnimationTest.layer("image", null,
+                Map.of("kind", "image", "asset", assetId, "size", AiAnimationTest.vec(40, 40))));
+    }
+
+    private static byte[] pngBytes() throws Exception {
+        BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", output);
+        return output.toByteArray();
     }
 }

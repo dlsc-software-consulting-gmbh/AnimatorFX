@@ -2,6 +2,7 @@ package com.dlsc.animatorfx.editor.ai;
 
 import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
+import com.dlsc.animatorfx.model.io.AnimationFormatException;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.message.Content;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow;
@@ -78,8 +80,16 @@ public final class AiProviderClient {
     }
 
     public CompletableFuture<String> edit(Provider provider, String model, String apiKey, String context) {
-        return send(provider, model, apiKey, context, AiEdits.schema(), AiEdits.instructions(), 400_000,
-                List.of(), GENERATION_TIMEOUT, GENERATION_TIMEOUT, 16384, null);
+        return edit(provider, model, apiKey, context, List.of());
+    }
+
+    public CompletableFuture<String> edit(Provider provider, String model, String apiKey, String context,
+                                         List<AiChatAttachment> attachments) {
+        List<String> images = attachments.stream()
+                .map(attachment -> Base64.getEncoder().encodeToString(attachment.preview())).toList();
+        return send(provider, model, apiKey, editPayload(context, attachments), AiEdits.schema(),
+                AiEdits.instructions() + editManifest(attachments), 400_000,
+                images, GENERATION_TIMEOUT, GENERATION_TIMEOUT, 16384, null);
     }
 
     public CompletableFuture<String> generate(Provider provider, String model, String apiKey, String prompt,
@@ -154,6 +164,46 @@ public final class AiProviderClient {
         return text.append("\nPlace a raster attachment with image content and an SVG with vector content, "
                 + "using its id as asset, or use attachments only as design references for palette, style and "
                 + "layout. Follow the request on how to use them. Keep each attachment's aspect ratio.").toString();
+    }
+
+    private static String editManifest(List<AiChatAttachment> attachments) {
+        if (attachments.isEmpty()) {
+            return "\nNo attachments are available in this request; do not reference image or vector assets.";
+        }
+        StringBuilder text = new StringBuilder("\nCurrent request attachment manifest:");
+        for (int i = 0; i < attachments.size(); i++) {
+            AiChatAttachment attachment = attachments.get(i);
+            text.append("\n").append(AiChatAttachment.id(i)).append(": ")
+                    .append(attachment.kind() == AiAttachment.Kind.VECTOR ? "vector" : "raster")
+                    .append(" (").append(Math.round(attachment.width())).append('x')
+                    .append(Math.round(attachment.height())).append(" px)");
+        }
+        return text.toString();
+    }
+
+    private static String editPayload(String context, List<AiChatAttachment> attachments) {
+        if (attachments.isEmpty() || context == null || context.isBlank() || context.length() > 400_000) {
+            return context;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        try {
+            if (Json.parse(context) instanceof Map<?, ?> parsed) {
+                parsed.forEach((key, value) -> payload.put((String) key, value));
+            } else {
+                payload.put("context", context);
+            }
+        } catch (AnimationFormatException ex) {
+            payload.put("context", context);
+        }
+        List<Map<String, Object>> manifest = new ArrayList<>();
+        for (int i = 0; i < attachments.size(); i++) {
+            AiChatAttachment attachment = attachments.get(i);
+            manifest.add(Map.of("id", AiChatAttachment.id(i), "name", attachment.name(),
+                    "kind", attachment.kind() == AiAttachment.Kind.VECTOR ? "vector" : "raster",
+                    "width", attachment.width(), "height", attachment.height()));
+        }
+        payload.put("attachments", manifest);
+        return JsonWriter.write(payload);
     }
 
     private CompletableFuture<String> send(Provider provider, String model, String apiKey, String prompt,

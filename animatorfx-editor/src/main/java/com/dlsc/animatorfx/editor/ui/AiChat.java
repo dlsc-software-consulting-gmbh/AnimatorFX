@@ -1,5 +1,6 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.ai.AiChatAttachment;
 import com.dlsc.animatorfx.editor.ai.AiEdits;
 import com.dlsc.animatorfx.editor.ai.AiEditService;
 import com.dlsc.animatorfx.editor.ai.AiErrors;
@@ -7,6 +8,7 @@ import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.model.Animation;
+import com.dlsc.animatorfx.model.io.AnimationFile;
 import javafx.animation.Interpolator;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
@@ -45,8 +47,9 @@ import java.util.function.Supplier;
 final class AiChat extends VBox {
     @FunctionalInterface
     interface Request {
-        CompletableFuture<AiEdits.Result> edit(AiSettings settings, Animation animation, List<String> selection,
-                                                double time, List<AiEdits.Message> history, String prompt);
+        CompletableFuture<AiEdits.Result> edit(AiSettings settings, AnimationFile file, List<String> selection,
+                                                double time, List<AiEdits.Message> history, String prompt,
+                                                List<AiChatAttachment> attachments);
     }
 
     private final Workspace workspace;
@@ -57,6 +60,7 @@ final class AiChat extends VBox {
     private final Map<EditorDocument, Map<AiEdits.Message, AiFeedback>> feedback = new IdentityHashMap<>();
     private final VBox transcript = new VBox(8);
     private final ScrollPane conversation = new ScrollPane(transcript);
+    private final AiChatAttachmentsView attachments = new AiChatAttachmentsView();
     private final Label placeholder = new Label("Describe a change to the current project.");
     private final TextArea input = new TextArea();
     private final Label provider = new Label();
@@ -70,8 +74,14 @@ final class AiChat extends VBox {
     private final Timeline typingAnimation = new Timeline();
     private Pending active;
     private boolean disposed;
+    private final ChangeListener<AnimationFile> fileChanged = (obs, oldFile, newFile) ->
+            attachments.setProject(newFile);
     private final ChangeListener<EditorDocument> documentChanged = (obs, oldDoc, newDoc) -> {
+        if (oldDoc != null) oldDoc.fileContentProperty().removeListener(fileChanged);
+        if (newDoc != null) newDoc.fileContentProperty().addListener(fileChanged);
         input.clear();
+        attachments.clear();
+        attachments.setProject(newDoc == null ? null : newDoc.getFileContent());
         refresh();
     };
     private final ListChangeListener<EditorDocument> documentsChanged = change -> {
@@ -144,9 +154,15 @@ final class AiChat extends VBox {
             refresh();
         });
         HBox buttons = new HBox(6, send, cancel, clear);
-        getChildren().addAll(context, history, input, buttons);
+        VBox composer = new VBox(6, attachments, input, buttons);
+        getChildren().addAll(context, history, composer);
         workspace.activeDocumentProperty().addListener(documentChanged);
         workspace.getDocuments().addListener(documentsChanged);
+        if (workspace.getActiveDocument() != null) {
+            workspace.getActiveDocument().fileContentProperty().addListener(fileChanged);
+        }
+        attachments.setProject(workspace.getActiveDocument() == null
+                ? null : workspace.getActiveDocument().getFileContent());
         refresh();
     }
 
@@ -280,20 +296,29 @@ final class AiChat extends VBox {
             return;
         }
         Animation snapshot = target.getAnimation();
+        AnimationFile file = target.getFileContent();
+        if (!attachments.validateProjectAttachments(file)) return;
+        List<AiChatAttachment> submittedAttachments = List.copyOf(attachments.getAttachments());
         List<AiEdits.Message> history = List.copyOf(conversations.getOrDefault(target, List.of()));
-        append(target, "user", prompt);
+        String transcriptPrompt = prompt;
+        if (!submittedAttachments.isEmpty()) {
+            transcriptPrompt += "\n\nAttachments: " + submittedAttachments.stream()
+                    .map(AiChatAttachment::name).collect(java.util.stream.Collectors.joining(", "));
+        }
+        append(target, "user", transcriptPrompt);
         input.clear();
         String context = selected.provider() + " / " + selected.model();
         activity.accept("AI edit started: " + context);
         CompletableFuture<AiEdits.Result> future;
         try {
-            future = request.edit(selected, snapshot, List.copyOf(target.getSelection().layerIds()),
-                    target.getPlayhead(), history, prompt);
+            future = request.edit(selected, file, List.copyOf(target.getSelection().layerIds()),
+                    target.getPlayhead(), history, prompt, submittedAttachments);
         } catch (RuntimeException ex) {
             activity.accept("AI edit failed: " + context);
             append(target, "assistant", "Could not start the AI request.");
             return;
         }
+        attachments.clear();
         Pending pending = new Pending(target, snapshot, future, context);
         active = pending;
         target.animationProperty().addListener(pending.changed);
@@ -323,7 +348,8 @@ final class AiChat extends VBox {
         } else {
             AiFeedback card = null;
             if (!pending.snapshot.equals(result.animation())) {
-                pending.document.execute(Commands.setDocument("AI Edit", ignored -> result.animation()));
+                pending.document.execute(Commands.setDocument("AI Edit", ignored -> result.animation()),
+                        result.newAssets());
                 if (!result.changes().isEmpty()) {
                     card = new AiFeedback(pending.document, result);
                 }
@@ -359,6 +385,9 @@ final class AiChat extends VBox {
             active = null;
         }
         workspace.activeDocumentProperty().removeListener(documentChanged);
+        if (workspace.getActiveDocument() != null) {
+            workspace.getActiveDocument().fileContentProperty().removeListener(fileChanged);
+        }
         workspace.getDocuments().removeListener(documentsChanged);
         conversations.clear();
         for (EditorDocument document : List.copyOf(feedback.keySet())) removeFeedback(document);

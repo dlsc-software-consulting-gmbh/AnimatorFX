@@ -32,7 +32,8 @@ public final class AiEditService {
             "Invalid keyframe easing.");
     @FunctionalInterface
     public interface Request {
-        CompletableFuture<String> send(AiProviderClient.Provider provider, String model, String key, String context);
+        CompletableFuture<String> send(AiProviderClient.Provider provider, String model, String key, String context,
+                                       List<AiChatAttachment> attachments);
     }
 
     private final Function<String, String> readKey;
@@ -82,12 +83,20 @@ public final class AiEditService {
 
     public CompletableFuture<AiEdits.Result> edit(AiSettings settings, Animation snapshot, List<String> selection,
                                                    double playhead, List<AiEdits.Message> history, String prompt) {
-        return edit(settings, new AnimationFile(snapshot, java.util.Map.of()), selection, playhead, history, prompt);
+        return edit(settings, new AnimationFile(snapshot, java.util.Map.of()), selection, playhead, history, prompt,
+                List.of());
     }
 
     public CompletableFuture<AiEdits.Result> edit(AiSettings settings, AnimationFile file, List<String> selection,
                                                    double playhead, List<AiEdits.Message> history, String prompt) {
+        return edit(settings, file, selection, playhead, history, prompt, List.of());
+    }
+
+    public CompletableFuture<AiEdits.Result> edit(AiSettings settings, AnimationFile file, List<String> selection,
+                                                   double playhead, List<AiEdits.Message> history, String prompt,
+                                                   List<AiChatAttachment> attachments) {
         Animation snapshot = file.animation();
+        List<AiChatAttachment> currentAttachments = List.copyOf(attachments);
         var result = new CompletableFuture<AiEdits.Result>();
         Object lock = new Object();
         @SuppressWarnings("unchecked")
@@ -109,10 +118,10 @@ public final class AiEditService {
                 synchronized (lock) {
                     if (result.isDone()) return;
                     network = AiRepair.run(context,
-                            input -> request.send(settings.provider(), settings.model(), key, input),
+                            input -> request.send(settings.provider(), settings.model(), key, input, currentAttachments),
                             json -> {
                                 try {
-                                    return AiEdits.parse(json, snapshot);
+                                    return AiEdits.parse(json, snapshot, currentAttachments);
                                 } catch (Exception | StackOverflowError ex) {
                                     String detail = ex instanceof IllegalArgumentException && EDIT_ERRORS.contains(ex.getMessage())
                                             ? ex.getMessage() : "Invalid AI edit response.";

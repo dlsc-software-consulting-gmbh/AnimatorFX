@@ -72,16 +72,28 @@ public record AiAttachment(String name, Kind kind, String extension, byte[] byte
      */
     public static AiAttachment read(Path file) throws IOException {
         String name = file.getFileName().toString();
-        int dot = name.lastIndexOf('.');
-        String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+        if (Files.size(file) > MAX_BYTES) throw new IOException(name + ": larger than 5 MB.");
+        return read(name, Files.readAllBytes(file));
+    }
+
+    static AiAttachment read(String name, byte[] bytes) throws IOException {
+        String extension = extension(name);
         if (extension.equals("webp")) throw new IOException(name + ": WebP is not supported.");
         if (!RASTER.contains(extension) && !extension.equals("svg")) {
             throw new IOException(name + ": unsupported file type. Use PNG, JPEG, GIF or SVG.");
         }
-        if (Files.size(file) > MAX_BYTES) throw new IOException(name + ": larger than 5 MB.");
-        byte[] bytes = Files.readAllBytes(file);
         if (bytes.length > MAX_BYTES) throw new IOException(name + ": larger than 5 MB.");
+        return image(name, bytes);
+    }
+
+    static AiAttachment image(String name, byte[] bytes) throws IOException {
+        String extension = extension(name);
         return extension.equals("svg") ? vector(name, bytes) : raster(name, extension, bytes);
+    }
+
+    private static String extension(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
     private static AiAttachment raster(String name, String extension, byte[] bytes) throws IOException {

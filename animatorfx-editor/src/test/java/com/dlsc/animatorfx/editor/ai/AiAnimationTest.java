@@ -18,14 +18,20 @@ import com.dlsc.animatorfx.model.io.AnimationFormatException;
 import com.dlsc.animatorfx.model.io.AnimationJson;
 import com.dlsc.animatorfx.model.io.Json;
 import com.dlsc.animatorfx.model.io.JsonWriter;
+import javafx.scene.image.Image;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -216,6 +222,109 @@ class AiAnimationTest {
     }
 
     @Test
+    void projectSvgPlacesItsExistingImageAssetWithItsAdvertisedKind() throws Exception {
+        Asset asset = new Asset("project-svg", Asset.Kind.IMAGE, "assets/logo.svg", "Logo");
+        byte[] bytes = """
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="32">
+                  <rect width="64" height="32" fill="#f00"/>
+                </svg>
+                """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        org.testfx.api.FxToolkit.registerPrimaryStage();
+        AiChatAttachment attachment = org.testfx.util.WaitForAsyncUtils.asyncFx(
+                () -> AiChatAttachment.projectImage(asset, bytes)).get();
+        String kind = attachment.kind() == AiAttachment.Kind.VECTOR ? "vector" : "image";
+        var placed = layer("logo", null, Map.of("kind", kind, "asset", "asset1", "size", vec(64, 32)));
+
+        AnimationFile result = AiAnimation.parseChat(JsonWriter.write(document(placed)), List.of(attachment));
+
+        ImageLayer image = assertInstanceOf(ImageLayer.class, result.animation().layers().getFirst());
+        assertEquals(asset.id(), image.assetId());
+        assertEquals(List.of(asset), result.animation().assets());
+        assertTrue(result.assets().isEmpty());
+    }
+
+    @Test
+    void chatSvgAttachmentBecomesEditableVectorContent() throws Exception {
+        var layer = layer("logo", null, Map.of("kind", "vector", "asset", "asset1", "size", vec(60, 60)));
+
+        AnimationFile file = AiAnimation.parseChat(JsonWriter.write(document(layer)),
+                List.of(AiChatAttachment.external(svg())));
+
+        GroupLayer group = assertInstanceOf(GroupLayer.class, file.animation().layers().getFirst());
+        assertTrue(Layers.flatten(file.animation()).stream().anyMatch(ShapeLayer.class::isInstance));
+        assertEquals("logo", group.base().id());
+    }
+
+    @Test
+    void chatAttachmentReferencesMustExistAndMatchTheirKind() throws Exception {
+        var unknown = layer("a", null, Map.of("kind", "image", "asset", "asset9", "size", vec(10, 10)));
+        var rasterAsVector = layer("a", null, Map.of("kind", "vector", "asset", "asset1", "size", vec(10, 10)));
+        var vectorAsImage = layer("a", null, Map.of("kind", "image", "asset", "asset2", "size", vec(10, 10)));
+        List<AiChatAttachment> attachments = List.of(AiChatAttachment.external(raster("a.png", new byte[]{1})),
+                AiChatAttachment.external(svg()));
+
+        var unknownError = assertThrows(AnimationFormatException.class,
+                () -> AiAnimation.parseChat(JsonWriter.write(document(unknown)), attachments));
+        assertEquals("$.layers[0].content.asset", unknownError.jsonPath());
+        for (var mismatch : List.of(rasterAsVector, vectorAsImage)) {
+            var error = assertThrows(AnimationFormatException.class,
+                    () -> AiAnimation.parseChat(JsonWriter.write(document(mismatch)), attachments));
+            assertEquals("$.layers[0].content.asset", error.jsonPath());
+        }
+    }
+
+    @Test
+    void projectChatAttachmentRejectsUnreadableImageBytes() {
+        Asset image = new Asset("photo", Asset.Kind.IMAGE, "photo.png", "Photo");
+        assertThrows(IOException.class, () -> AiChatAttachment.projectImage(image, new byte[]{1, 2, 3}));
+        assertThrows(IllegalArgumentException.class, () -> AiChatAttachment.projectImage(
+                new Asset("font", Asset.Kind.FONT, "font.ttf", "Font"), new byte[]{1, 2, 3}));
+    }
+
+    @Test
+    void projectChatAttachmentRejectsOversizedFinalPreview() throws Exception {
+        BufferedImage image = new BufferedImage(256, 256, BufferedImage.TYPE_INT_ARGB);
+        Random random = new Random(12345);
+        for (int y = 0; y < 256; y++) {
+            for (int x = 0; x < 256; x++) {
+                image.setRGB(x, y, random.nextInt());
+            }
+        }
+        var output = new ByteArrayOutputStream();
+        assertTrue(ImageIO.write(image, "png", output));
+        byte[] bytes = output.toByteArray();
+        byte[] encodedPreview = AiPreviewFrames.png(new Image(new ByteArrayInputStream(bytes), 256, 256, true, true));
+        assertTrue(encodedPreview.length > 200_000, "fixture must exceed the preview cap");
+        Asset asset = new Asset("noise", Asset.Kind.IMAGE, "noise.png", "Noise");
+
+        IOException error = assertThrows(IOException.class, () -> AiChatAttachment.projectImage(asset, bytes));
+        assertTrue(error.getMessage().contains("Noise"));
+        assertTrue(error.getMessage().contains("200 KB"));
+    }
+
+    @Test
+    void externalChatAttachmentRejectsOversizedPreview() {
+        AiAttachment attachment = new AiAttachment("large.png", AiAttachment.Kind.RASTER, "png",
+                new byte[]{1}, 1, 1, new byte[200_001], null);
+
+        IOException error = assertThrows(IOException.class, () -> AiChatAttachment.external(attachment));
+        assertTrue(error.getMessage().contains("large.png"));
+        assertTrue(error.getMessage().contains("200 KB"));
+    }
+
+    @Test
+    void generationParsingStillAcceptsAnOversizedAttachmentPreview() throws Exception {
+        AiAttachment attachment = new AiAttachment("large.png", AiAttachment.Kind.RASTER, "png",
+                new byte[]{1}, 1, 1, new byte[200_001], null);
+        var image = layer("image", null, Map.of("kind", "image", "asset", "asset1", "size", vec(10, 10)));
+
+        AnimationFile file = AiAnimation.parse(JsonWriter.write(document(image)), List.of(attachment));
+
+        assertInstanceOf(ImageLayer.class, file.animation().layers().getFirst());
+        assertArrayEquals(new byte[]{1}, file.assets().values().iterator().next());
+    }
+
+    @Test
     void unreferencedAttachmentsAreNotEmbedded() throws Exception {
         AnimationFile file = AiAnimation.parse(JsonWriter.write(document(layer("box", null, rect()))),
                 List.of(raster("unused.png", new byte[]{1})));
@@ -391,16 +500,16 @@ class AiAnimationTest {
     }
 
     @SafeVarargs
-    private static Map<String, Object> document(Map<String, Object>... layers) {
+    static Map<String, Object> document(Map<String, Object>... layers) {
         return document(List.of(layers));
     }
 
-    private static Map<String, Object> document(List<Map<String, Object>> layers) {
+    static Map<String, Object> document(List<Map<String, Object>> layers) {
         return new LinkedHashMap<>(Map.of("version", 1, "name", "Demo", "width", 800, "height", 600,
                 "frameRate", 60, "duration", 3, "background", color(), "layers", layers));
     }
 
-    private static Map<String, Object> layer(String id, String parent, Map<String, Object> content) {
+    static Map<String, Object> layer(String id, String parent, Map<String, Object> content) {
         var layer = new LinkedHashMap<String, Object>();
         layer.put("id", id);
         layer.put("parentId", parent);
@@ -436,7 +545,7 @@ class AiAnimationTest {
         return Map.of("point", vec(x, y), "in", vec(0, 0), "out", vec(0, 0));
     }
 
-    private static Map<String, Object> vec(double x, double y) {
+    static Map<String, Object> vec(double x, double y) {
         return Map.of("x", x, "y", y);
     }
 

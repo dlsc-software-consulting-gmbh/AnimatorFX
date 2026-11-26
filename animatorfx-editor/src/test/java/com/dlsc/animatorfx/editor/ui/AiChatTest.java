@@ -1,14 +1,18 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.ai.AiChatAttachment;
 import com.dlsc.animatorfx.editor.ai.AiEdits;
 import com.dlsc.animatorfx.editor.ai.AiEditService;
 import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.model.Animatable;
+import com.dlsc.animatorfx.model.Animation;
+import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.Effect;
 import com.dlsc.animatorfx.model.Easing;
 import com.dlsc.animatorfx.model.Geometry;
+import com.dlsc.animatorfx.model.ImageLayer;
 import com.dlsc.animatorfx.model.LayerBase;
 import com.dlsc.animatorfx.model.Paint;
 import com.dlsc.animatorfx.model.Rgba;
@@ -16,6 +20,7 @@ import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Vec2;
 import com.dlsc.animatorfx.model.LayerProperties;
+import com.dlsc.animatorfx.model.io.AnimationFile;
 import com.dlsc.animatorfx.model.io.JsonWriter;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -32,6 +37,9 @@ import org.junit.jupiter.api.Test;
 import org.testfx.api.FxToolkit;
 import org.testfx.util.WaitForAsyncUtils;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -69,6 +77,37 @@ class AiChatTest {
                 assertEquals(before, fixture.document.getAnimation());
                 fixture.document.redo();
                 assertEquals(1, fixture.document.getAnimation().layers().size());
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void appliesNewAssetsAndTheResultAnimationAsOneUndoableEdit() throws Exception {
+        Asset asset = new Asset("logo", Asset.Kind.IMAGE, "assets/logo.png", "logo.png");
+        byte[] imageBytes = pngBytes();
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
+            ImageLayer layer = new ImageLayer(LayerBase.create("Logo", 3), asset.id(), 40, 20);
+            var animation = file.animation().withAssets(List.of(asset)).withLayers(List.of(layer));
+            return CompletableFuture.completedFuture(
+                    new AiEdits.Result("Added logo.", animation, List.of(), Map.of(asset, imageBytes)));
+        }));
+        try {
+            fx(() -> { fixture.send("Add the logo"); return null; });
+            WaitForAsyncUtils.waitForFxEvents();
+            fx(() -> {
+                assertEquals(1, fixture.document.getAnimation().layers().size());
+                assertEquals(1, fixture.document.getAnimation().assets().size());
+                assertArrayEquals(imageBytes, fixture.document.getFileContent().assets().get(asset.id()));
+                fixture.document.undo();
+                assertTrue(fixture.document.getAnimation().layers().isEmpty());
+                assertTrue(fixture.document.getAnimation().assets().isEmpty());
+                assertTrue(fixture.document.getFileContent().assets().isEmpty());
+                fixture.document.redo();
+                assertEquals(1, fixture.document.getAnimation().layers().size());
+                assertArrayEquals(imageBytes, fixture.document.getFileContent().assets().get(asset.id()));
                 return null;
             });
         } finally {
@@ -151,9 +190,155 @@ class AiChatTest {
     }
 
     @Test
+    void attachmentsAreSubmittedOnlyWithTheTurnThatAddedThem() throws Exception {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) ->
+                CompletableFuture.completedFuture(new AiEdits.Result("Done.", file.animation()))));
+        try {
+            Asset projectAsset = new Asset("logo", Asset.Kind.IMAGE, "assets/logo.png", "logo.png");
+            byte[] pngBytes = pngBytes();
+            fx(() -> {
+                AiChatAttachmentsView view = (AiChatAttachmentsView) fixture.chat.lookup("#ai-chat-attachments");
+                fixture.document.addAsset(projectAsset, pngBytes);
+                view.addProjectImage(projectAsset, pngBytes);
+                fixture.send("Use this image");
+                return null;
+            });
+            WaitForAsyncUtils.waitForFxEvents();
+            fx(() -> {
+                AiChatAttachmentsView view = (AiChatAttachmentsView) fixture.chat.lookup("#ai-chat-attachments");
+                assertEquals(1, fixture.submitted.getFirst().size());
+                assertTrue(view.getAttachments().isEmpty());
+                assertTrue(fixture.transcript().contains("logo.png"));
+                fixture.send("Make it move");
+                return null;
+            });
+            WaitForAsyncUtils.waitForFxEvents();
+            assertTrue(fx(() -> fixture.submitted.getLast().isEmpty()));
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void projectPickerTracksInsertionInTheSameDocument() throws Exception {
+        Fixture fixture = fx(() -> new Fixture(new CompletableFuture<>()));
+        Asset asset = new Asset("inserted", Asset.Kind.IMAGE, "assets/inserted.png", "Inserted");
+        byte[] bytes = pngBytes();
+        try {
+            fx(() -> {
+                fixture.document.addAsset(asset, bytes);
+                @SuppressWarnings("unchecked")
+                ComboBox<Asset> picker = (ComboBox<Asset>) fixture.chat.lookup("#ai-chat-project-images");
+                assertEquals(List.of(asset), picker.getItems());
+                picker.setValue(asset);
+                assertEquals(asset, ((AiChatAttachmentsView) fixture.chat.lookup("#ai-chat-attachments"))
+                        .getAttachments().getFirst().projectAsset());
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void undoingProjectAssetInsertionRefreshesPickerAndBlocksStaleSubmission() throws Exception {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
+            Asset asset = attachments.getFirst().projectAsset();
+            ImageLayer layer = new ImageLayer(LayerBase.create("Placed", 3), asset.id(), 20, 10);
+            return CompletableFuture.completedFuture(new AiEdits.Result("Placed",
+                    file.animation().withAssets(List.of(asset)).withLayers(List.of(layer))));
+        }));
+        Asset asset = new Asset("inserted", Asset.Kind.IMAGE, "assets/inserted.png", "Inserted");
+        byte[] bytes = pngBytes();
+        try {
+            fx(() -> {
+                fixture.document.addAsset(asset, bytes);
+                AiChatAttachmentsView view = (AiChatAttachmentsView) fixture.chat.lookup("#ai-chat-attachments");
+                view.setProject(fixture.document.getFileContent());
+                view.addProjectImage(asset, bytes);
+                fixture.document.undo();
+                @SuppressWarnings("unchecked")
+                ComboBox<Asset> picker = (ComboBox<Asset>) fixture.chat.lookup("#ai-chat-project-images");
+                assertTrue(picker.getItems().isEmpty());
+                assertFalse(view.getError().isEmpty());
+                fixture.send("Place it");
+                assertTrue(fixture.submitted.isEmpty());
+                assertTrue(fixture.document.getAnimation().assets().isEmpty());
+                assertTrue(fixture.document.getAnimation().layers().isEmpty());
+                assertTrue(fixture.document.getFileContent().assets().isEmpty());
+                fixture.document.redo();
+                assertEquals(List.of(asset), picker.getItems());
+                assertEquals("", view.getError());
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void submissionRevalidatesEveryProjectAttachmentAgainstTheExactFileSnapshot() throws Exception {
+        Fixture fixture = fx(() -> new Fixture(new CompletableFuture<>()));
+        Asset missing = new Asset("missing", Asset.Kind.IMAGE, "assets/missing.png", "Missing");
+        Asset broken = new Asset("broken", Asset.Kind.IMAGE, "assets/broken.png", "Broken");
+        byte[] bytes = pngBytes();
+        try {
+            fx(() -> {
+                AiChatAttachmentsView view = (AiChatAttachmentsView) fixture.chat.lookup("#ai-chat-attachments");
+                view.addProjectImage(missing, bytes);
+                fixture.send("Place missing");
+                assertTrue(fixture.submitted.isEmpty());
+                assertTrue(view.getError().contains("Missing"));
+                assertFalse(((TextArea) fixture.chat.lookup("#ai-chat-input")).getText().isEmpty());
+                view.clear();
+                fixture.document.addAsset(broken, new byte[] {1, 2, 3});
+                view.addProjectImage(broken, bytes);
+                fixture.send("Place broken");
+                assertTrue(fixture.submitted.isEmpty());
+                assertTrue(view.getError().contains("readable"));
+                assertTrue(fixture.document.getAnimation().layers().isEmpty());
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void switchingDocumentsClearsDraftAttachmentsAndRefreshesProjectImages() throws Exception {
+        Fixture fixture = fx(() -> new Fixture(new CompletableFuture<>()));
+        try {
+            Asset draft = new Asset("draft", Asset.Kind.IMAGE, "assets/draft.png", "draft.png");
+            Asset available = new Asset("available", Asset.Kind.IMAGE, "assets/available.png", "available.png");
+            byte[] pngBytes = pngBytes();
+            EditorDocument other = EditorDocument.imported(new AnimationFile(
+                    Animation.create("Other", 320, 200, 2).withAssets(List.of(available)),
+                    Map.of(available.id(), pngBytes)));
+            fx(() -> {
+                ((AiChatAttachmentsView) fixture.chat.lookup("#ai-chat-attachments"))
+                        .addProjectImage(draft, pngBytes);
+                fixture.workspace.add(other);
+                fixture.workspace.setActiveDocument(other);
+                return null;
+            });
+            fx(() -> {
+                AiChatAttachmentsView view = (AiChatAttachmentsView) fixture.chat.lookup("#ai-chat-attachments");
+                @SuppressWarnings("unchecked")
+                ComboBox<Asset> picker = (ComboBox<Asset>) view.lookup("#ai-chat-project-images");
+                assertTrue(view.getAttachments().isEmpty());
+                assertEquals(List.of(available), picker.getItems());
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
     void shadowControlsAdjustTheAppliedEditAndUndoSeparately() throws Exception {
-        Fixture fixture = fx(() -> new Fixture((settings, animation, selection, time, history, prompt) -> {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
             try {
+                var animation = file.animation();
                 var op = new java.util.LinkedHashMap<String, Object>();
                 op.put("kind", "shadow");
                 op.put("target", "ball");
@@ -232,8 +417,9 @@ class AiChatTest {
 
     @Test
     void shadowControlsNeverRetargetAfterEffectsAreReorderedBeforeExpansion() throws Exception {
-        Fixture fixture = fx(() -> new Fixture((settings, animation, selection, time, history, prompt) -> {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
             try {
+                var animation = file.animation();
                 var op = new java.util.LinkedHashMap<String, Object>();
                 op.put("kind", "shadow"); op.put("target", "ball"); op.put("parent", null);
                 op.put("property", null);
@@ -278,8 +464,9 @@ class AiChatTest {
 
     @Test
     void keyframeControlsPreserveOtherKeysAndFollowLocksAndUndo() throws Exception {
-        Fixture fixture = fx(() -> new Fixture((settings, animation, selection, time, history, prompt) -> {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
             try {
+                var animation = file.animation();
                 var op = new java.util.LinkedHashMap<String, Object>();
                 op.put("kind", "keyframe"); op.put("target", "ball"); op.put("parent", null);
                 op.put("property", "transform.position"); op.put("value", "{\"x\":100,\"y\":200}");
@@ -346,7 +533,8 @@ class AiChatTest {
 
     @Test
     void createdTextLayerHasAdjustableContentAndFont() throws Exception {
-        Fixture fixture = fx(() -> new Fixture((settings, animation, selection, time, history, prompt) -> {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
+            var animation = file.animation();
             var text = new TextLayer(LayerBase.create("Title", 3).withId("title"), "Hello", "System", null,
                     Animatable.of(24.0), TextLayer.Weight.NORMAL, false, TextLayer.Align.LEFT,
                     Animatable.of(new Paint.Solid(Rgba.BLACK)), null);
@@ -397,7 +585,8 @@ class AiChatTest {
 
     @Test
     void controlsBecomeAvailableWhenAnUndoneLayerIsRedoneAfterExpansion() throws Exception {
-        Fixture fixture = fx(() -> new Fixture((settings, animation, selection, time, history, prompt) -> {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
+            var animation = file.animation();
             var ball = new ShapeLayer(LayerBase.create("Ball", 3).withId("ball"),
                     new Geometry.Ellipse(Animatable.of(new Vec2(30, 30))),
                     Animatable.of(new Paint.Solid(Rgba.BLACK)), null, null);
@@ -451,7 +640,8 @@ class AiChatTest {
     @Test
     void adjustingAControlInvalidatesAnInFlightAiResponse() throws Exception {
         CompletableFuture<AiEdits.Result> later = new CompletableFuture<>();
-        Fixture fixture = fx(() -> new Fixture((settings, animation, selection, time, history, prompt) -> {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
+            var animation = file.animation();
             if (prompt.equals("Second")) return later;
             var ball = new ShapeLayer(LayerBase.create("Ball", 3).withId("ball"),
                     new Geometry.Ellipse(Animatable.of(new Vec2(30, 30))),
@@ -501,6 +691,25 @@ class AiChatTest {
     }
 
     @Test
+    void failedRequestsLeaveTheDocumentUntouched() throws Exception {
+        CompletableFuture<AiEdits.Result> response = new CompletableFuture<>();
+        Fixture fixture = fx(() -> new Fixture(response));
+        try {
+            var before = fx(() -> fixture.document.getAnimation());
+            fx(() -> { fixture.send("Change it"); return null; });
+            response.completeExceptionally(new IllegalStateException("Provider unavailable"));
+            WaitForAsyncUtils.waitForFxEvents();
+            fx(() -> {
+                assertSame(before, fixture.document.getAnimation());
+                assertFalse(fixture.document.isCanUndo());
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.chat.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
     void conversationUsesTheCurrentProjectAndAppliesValidatedProviderEdits() throws Exception {
         AtomicReference<String> sent = new AtomicReference<>();
         var op = new java.util.LinkedHashMap<String, Object>();
@@ -512,7 +721,7 @@ class AiChatTest {
         op.put("time", 1.0);
         op.put("easing", "linear");
         String response = JsonWriter.write(Map.of("reply", "Moved.", "operations", List.of(op)));
-        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context) -> {
+        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context, attachments) -> {
             sent.set(context);
             return CompletableFuture.completedFuture(response);
         });
@@ -570,9 +779,9 @@ class AiChatTest {
     @Test
     void followUpRequestsIncludePriorConversation() throws Exception {
         List<List<AiEdits.Message>> histories = new ArrayList<>();
-        Fixture fixture = fx(() -> new Fixture((settings, animation, selection, time, history, prompt) -> {
+        Fixture fixture = fx(() -> new Fixture((settings, file, selection, time, history, prompt, attachments) -> {
             histories.add(history);
-            return CompletableFuture.completedFuture(new AiEdits.Result("Reply", animation));
+            return CompletableFuture.completedFuture(new AiEdits.Result("Reply", file.animation()));
         }));
         try {
             fx(() -> { fixture.send("First"); return null; });
@@ -606,20 +815,31 @@ class AiChatTest {
         return WaitForAsyncUtils.asyncFx(action).get();
     }
 
+    private static byte[] pngBytes() throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(20, 10, BufferedImage.TYPE_INT_RGB), "png", output);
+        return output.toByteArray();
+    }
+
     private static final class Fixture {
         final Workspace workspace = new Workspace();
         final EditorDocument document = EditorDocument.untitled();
         final List<String> activity = new ArrayList<>();
+        final List<List<AiChatAttachment>> submitted = new ArrayList<>();
         final Stage stage = new Stage();
         final AiChat chat;
 
         Fixture(CompletableFuture<AiEdits.Result> response) {
-            this((settings, animation, selection, time, history, prompt) -> response);
+            this((settings, file, selection, time, history, prompt, attachments) -> response);
         }
 
         Fixture(AiChat.Request request) {
             workspace.add(document);
-            chat = new AiChat(workspace, AiSettings::defaults, request, activity::add);
+            chat = new AiChat(workspace, AiSettings::defaults,
+                    (settings, file, selection, time, history, prompt, attachments) -> {
+                        submitted.add(List.copyOf(attachments));
+                        return request.edit(settings, file, selection, time, history, prompt, attachments);
+                    }, activity::add);
             stage.setScene(new Scene(chat, 400, 600));
             stage.show();
         }

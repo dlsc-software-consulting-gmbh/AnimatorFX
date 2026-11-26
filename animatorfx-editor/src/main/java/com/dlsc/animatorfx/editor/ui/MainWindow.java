@@ -171,8 +171,8 @@ public final class MainWindow {
         };
         AiEditService editor = new AiEditService(readAiKey, aiClient::edit, aiClient::review,
                 message -> Platform.runLater(() -> aiConsole.log(message)));
-        aiChat = new AiChat(workspace, loadAiSettings, (settings, animation, selection, time, history, prompt) ->
-                editor.edit(settings, workspace.getActiveDocument().getFileContent(), selection, time, history, prompt),
+        aiChat = new AiChat(workspace, loadAiSettings, (settings, file, selection, time, history, prompt, attachments) ->
+                editor.edit(settings, file, selection, time, history, prompt, attachments),
                 aiConsole::log);
         aiConsole.installChat(aiChat);
         AiNotifications notifications = new AiNotifications(workspace, aiConsole::log);

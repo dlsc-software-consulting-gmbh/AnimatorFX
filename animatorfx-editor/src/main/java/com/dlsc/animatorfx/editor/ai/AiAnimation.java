@@ -80,13 +80,31 @@ public final class AiAnimation {
      * @throws AnimationFormatException also when a reference is unknown or names the wrong kind of attachment
      */
     public static AnimationFile parse(String json, List<AiAttachment> attachments) throws AnimationFormatException {
+        return parseChat(json, attachments.stream().map(attachment -> new AiChatAttachment(
+                attachment.name(), attachment.kind(), attachment.width(), attachment.height(),
+                attachment.preview(), null, attachment)).toList());
+    }
+
+    /**
+     * Like {@link #parse(String)}, and also places project or external chat attachments.
+     * Attachment {@code i} has the id {@link AiChatAttachment#id(int)}.
+     *
+     * @throws AnimationFormatException also when a reference is unknown or names the wrong kind of attachment
+     */
+    public static AnimationFile parseChat(String json, List<AiChatAttachment> attachments)
+            throws AnimationFormatException {
+        return parseChat(json, attachments, new LinkedHashMap<>());
+    }
+
+    static AnimationFile parseChat(String json, List<AiChatAttachment> attachments, Map<Integer, Asset> rasterAssets)
+            throws AnimationFormatException {
         if (json == null || json.length() > MAX_JSON_LENGTH) {
             throw error("$", "Expected JSON of at most " + MAX_JSON_LENGTH + " characters");
         }
         checkTokens(json);
         Object parsed = Json.parse(json);
         validate(parsed, VALIDATION_SCHEMA, "$");
-        return new Conversion(object(parsed), List.copyOf(attachments)).convert();
+        return new Conversion(object(parsed), List.copyOf(attachments), rasterAssets).convert();
     }
 
     private static Object portableSchema(Object value) {
@@ -415,16 +433,19 @@ public final class AiAnimation {
         private final Map<String, String> paths = new LinkedHashMap<>();
         private final Map<String, List<String>> children = new LinkedHashMap<>();
         private final double duration;
-        private final List<AiAttachment> attachments;
+        private final List<AiChatAttachment> attachments;
+        private final Map<Integer, Asset> rasterAssets;
         private final Map<Integer, Asset> placed = new LinkedHashMap<>();
         private final Map<String, Asset> imported = new LinkedHashMap<>();
         private final Map<String, byte[]> bytes = new LinkedHashMap<>();
         private int keyframeCount;
         private int vertexCount;
 
-        private Conversion(Map<String, Object> document, List<AiAttachment> attachments) {
+        private Conversion(Map<String, Object> document, List<AiChatAttachment> attachments,
+                           Map<Integer, Asset> rasterAssets) {
             this.document = document;
             this.attachments = attachments;
+            this.rasterAssets = rasterAssets;
             duration = number(document, "duration");
         }
 
@@ -537,25 +558,32 @@ public final class AiAnimation {
             String id = (String) content.get("asset");
             int index = -1;
             for (int i = 0; i < attachments.size(); i++) {
-                if (AiAttachment.id(i).equals(id)) index = i;
+                if (AiChatAttachment.id(i).equals(id)) index = i;
             }
             if (index < 0) throw error(path + ".asset", "Unknown attachment: " + id);
-            AiAttachment attachment = attachments.get(index);
+            AiChatAttachment attachment = attachments.get(index);
             if ((attachment.kind() == AiAttachment.Kind.VECTOR) != vector) {
                 throw error(path + ".asset", id + " is " + (vector ? "a raster image; use image content"
                         : "an SVG; use vector content"));
             }
             Vec2 size = vector(content.get("size"));
-            if (!vector) {
-                Asset asset = placed.computeIfAbsent(index, ignored -> {
-                    String assetId = UUID.randomUUID().toString();
-                    bytes.put(assetId, attachment.bytes());
-                    return new Asset(assetId, Asset.Kind.IMAGE, "assets/" + assetId + "." + attachment.extension(),
-                            attachment.name());
-                });
+            if (attachment.projectAsset() != null) {
+                Asset asset = placed.computeIfAbsent(index, ignored -> attachment.projectAsset());
                 return new ImageLayer(base, asset.id(), size.x(), size.y());
             }
-            AnimationFile svg = attachment.vector();
+            if (!vector) {
+                AiAttachment external = attachment.external();
+                Asset asset = rasterAssets.computeIfAbsent(index, ignored -> {
+                    String assetId = UUID.randomUUID().toString();
+                    bytes.put(assetId, external.bytes());
+                    return new Asset(assetId, Asset.Kind.IMAGE, "assets/" + assetId + "." + external.extension(),
+                            attachment.name());
+                });
+                placed.put(index, asset);
+                return new ImageLayer(base, asset.id(), size.x(), size.y());
+            }
+            AiAttachment external = attachment.external();
+            AnimationFile svg = external.vector();
             for (Asset asset : svg.animation().assets()) {
                 if (imported.putIfAbsent(asset.id(), asset) == null) bytes.put(asset.id(), svg.assets().get(asset.id()));
             }

@@ -3,6 +3,7 @@ package com.dlsc.animatorfx.editor.ai;
 import com.dlsc.animatorfx.model.io.AnimationFile;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -20,7 +21,11 @@ final class AiVisualReview {
                                                     Function<AnimationFile, CompletableFuture<List<byte[]>>> render,
                                                     Consumer<String> status) {
         return run(candidate, settings.visualReview(),
-                () -> render.apply(new AnimationFile(candidate.animation(), file.assets())),
+                () -> {
+                    var assets = new LinkedHashMap<>(file.assets());
+                    candidate.newAssets().forEach((asset, bytes) -> assets.put(asset.id(), bytes));
+                    return render.apply(new AnimationFile(candidate.animation(), assets));
+                },
                 frames -> {
                     if (request == null) return CompletableFuture.failedFuture(
                             new IllegalStateException("Visual review is unavailable."));
@@ -44,7 +49,8 @@ final class AiVisualReview {
                             AiEdits.Result revision = AiEdits.parse(response, candidate.animation());
                             var changes = new ArrayList<>(candidate.changes());
                             changes.addAll(revision.changes());
-                            result.complete(new AiEdits.Result(candidate.reply(), revision.animation(), changes));
+                            result.complete(new AiEdits.Result(candidate.reply(), revision.animation(), changes,
+                                    candidate.newAssets()));
                         } catch (Exception | StackOverflowError ex) {
                             result.completeExceptionally(ex);
                         }

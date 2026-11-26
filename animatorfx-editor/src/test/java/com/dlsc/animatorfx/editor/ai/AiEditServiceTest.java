@@ -9,9 +9,11 @@ import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.Vec2;
 import com.dlsc.animatorfx.model.io.AnimationFile;
+import com.dlsc.animatorfx.model.io.JsonWriter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
@@ -25,7 +27,7 @@ class AiEditServiceTest {
     void visualReviewDoesNotInventEditsForAnAnswerWithoutChanges() throws Exception {
         var reviewed = new java.util.concurrent.atomic.AtomicBoolean();
         AiEditService service = new AiEditService(provider -> "test-key",
-                (provider, model, key, context) ->
+                (provider, model, key, context, attachments) ->
                         CompletableFuture.completedFuture("{\"reply\":\"What color?\",\"operations\":[]}"),
                 (provider, model, key, context, frames, schema, instructions) -> {
                     reviewed.set(true);
@@ -51,7 +53,7 @@ class AiEditServiceTest {
         String refined = initial.replace("\"0.5\"", "\"0.7\"");
         var frameFile = new AtomicReference<AnimationFile>();
         AiEditService service = new AiEditService(provider -> "test-key",
-                (provider, model, key, context) -> CompletableFuture.completedFuture(initial),
+                (provider, model, key, context, attachments) -> CompletableFuture.completedFuture(initial),
                 (provider, model, key, context, frames, schema, instructions) ->
                         CompletableFuture.completedFuture(refined),
                 file -> {
@@ -71,7 +73,7 @@ class AiEditServiceTest {
         var contexts = new java.util.concurrent.CopyOnWriteArrayList<String>();
         String invalid = "{\"reply\":\"Done\",\"operations\":[{\"kind\":\"set\",\"target\":\"missing\","
                 + "\"parent\":null,\"property\":\"opacity\",\"value\":\"0.5\",\"time\":null,\"easing\":null}]}";
-        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context) -> {
+        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context, attachments) -> {
             contexts.add(context);
             return CompletableFuture.completedFuture(contexts.size() == 1 ? invalid
                     : "{\"reply\":\"Nothing to change\",\"operations\":[]}");
@@ -88,7 +90,7 @@ class AiEditServiceTest {
     @Test
     void sendsContextAndValidatesReturnedEdits() throws Exception {
         AtomicReference<String> sent = new AtomicReference<>();
-        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context) -> {
+        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context, attachments) -> {
             sent.set(context);
             return CompletableFuture.completedFuture("{\"reply\":\"What color?\",\"operations\":[]}");
         });
@@ -103,10 +105,55 @@ class AiEditServiceTest {
     }
 
     @Test
+    void validatesCurrentAttachmentReferencesAndResendsAttachmentsDuringRepair() throws Exception {
+        byte[] bytes = {4, 5, 6};
+        var source = new AiAttachment("placed.png", AiAttachment.Kind.RASTER, "png", bytes,
+                2, 2, new byte[]{9}, null);
+        AiChatAttachment attachment = AiChatAttachment.external(source);
+        var invalidOperation = new java.util.LinkedHashMap<String, Object>();
+        invalidOperation.put("kind", "set");
+        invalidOperation.put("target", "missing");
+        invalidOperation.put("parent", null);
+        invalidOperation.put("property", "opacity");
+        invalidOperation.put("value", "0.5");
+        invalidOperation.put("time", null);
+        invalidOperation.put("easing", null);
+        String invalid = JsonWriter.write(Map.of("reply", "Try again", "operations", List.of(invalidOperation)));
+        String fragment = JsonWriter.write(AiAnimationTest.document(AiAnimationTest.layer("image", null,
+                Map.of("kind", "image", "asset", "asset1", "size", AiAnimationTest.vec(40, 40)))));
+        var add = new java.util.LinkedHashMap<String, Object>();
+        add.put("kind", "add");
+        add.put("target", null);
+        add.put("parent", null);
+        add.put("property", null);
+        add.put("value", fragment);
+        add.put("time", null);
+        add.put("easing", null);
+        String valid = JsonWriter.write(Map.of("reply", "Placed", "operations", List.of(add)));
+        var sentAttachments = new java.util.concurrent.CopyOnWriteArrayList<List<AiChatAttachment>>();
+        AiEditService service = new AiEditService(provider -> "test-key",
+                (provider, model, key, context, attachments) -> {
+                    sentAttachments.add(attachments);
+                    return CompletableFuture.completedFuture(sentAttachments.size() == 1 ? invalid : valid);
+                });
+        var file = new AnimationFile(Animation.create("Project", 800, 600, 3), java.util.Map.of());
+
+        AiEdits.Result result = service.edit(AiSettings.defaults(), file, List.of(), 0, List.of(),
+                "Place the image", List.of(attachment)).get(5, TimeUnit.SECONDS);
+
+        assertEquals(2, sentAttachments.size());
+        assertEquals(List.of(attachment), sentAttachments.get(0));
+        assertEquals(List.of(attachment), sentAttachments.get(1));
+        assertEquals(1, result.newAssets().size());
+        assertArrayEquals(bytes, result.newAssets().values().iterator().next());
+        assertEquals("placed.png", result.animation().assets().getFirst().name());
+    }
+
+    @Test
     void cancellationReachesTheProviderRequest() throws Exception {
         CountDownLatch sent = new CountDownLatch(1);
         CompletableFuture<String> network = new CompletableFuture<>();
-        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context) -> {
+        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context, attachments) -> {
             sent.countDown();
             return network;
         });
@@ -119,7 +166,7 @@ class AiEditServiceTest {
 
     @Test
     void showsTechnicalDetailsButKeepsProviderTextOutOfActivityDiagnostics() {
-        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context) ->
+        AiEditService service = new AiEditService(provider -> "test-key", (provider, model, key, context, attachments) ->
                 CompletableFuture.failedFuture(new AiErrors.Detail(
                         "The AI provider returned HTTP 400: Unsupported schema; test-key Move the ball Project")));
         var failure = assertThrows(CompletionException.class, () -> service.edit(AiSettings.defaults(),
