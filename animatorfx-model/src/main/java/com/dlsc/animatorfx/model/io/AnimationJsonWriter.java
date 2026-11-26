@@ -173,6 +173,7 @@ final class AnimationJsonWriter {
     private static void base(Map<String, Object> json, LayerBase base, double duration) {
         json.put("id", base.id());
         put(json, "name", base.name(), "");
+        put(json, "exportName", base.exportName(), "");
         put(json, "visible", base.visible(), true);
         put(json, "locked", base.locked(), false);
         put(json, "inPoint", base.inPoint(), 0.0);

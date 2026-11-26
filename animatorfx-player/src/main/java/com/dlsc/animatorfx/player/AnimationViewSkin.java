@@ -55,6 +55,8 @@ public class AnimationViewSkin extends SkinBase<AnimationView> {
             shown = file;
             renderer.setDocument(file);
             attachEmbeddedNodes();
+            getSkinnable().elements().setDocument(file);
+            attachElements();
             getSkinnable().requestLayout();
         }
         Frame frame = player.getFrame();
@@ -72,8 +74,30 @@ public class AnimationViewSkin extends SkinBase<AnimationView> {
         return renderer.getLayerNode(layerId);
     }
 
+    private void attachElements() {
+        for (AnimationElement element : getSkinnable().elements().handles()) {
+            var layer = element.layer();
+            if (layer == null) {
+                element.attach(null);
+            } else {
+                renderer.setLayerOverrides(layer.id(), element.getText(), element.getFill(), element.getVisible());
+                element.attach(renderer.getLayerNode(layer.id()));
+            }
+        }
+    }
+
+    void refreshElements() {
+        attachElements();
+        if (player.getFrame() != null) renderer.apply(player.getFrame());
+    }
+
     @Override
     public void dispose() {
+        for (AnimationElement element : getSkinnable().elements().handles()) {
+            if (element.layer() != null && element.getNode() == renderer.getLayerNode(element.layer().id())) {
+                element.attach(null);
+            }
+        }
         player.frameProperty().removeListener(playerListener);
         player.animationProperty().removeListener(playerListener);
         player.removeBindingsListener(bindingsListener);

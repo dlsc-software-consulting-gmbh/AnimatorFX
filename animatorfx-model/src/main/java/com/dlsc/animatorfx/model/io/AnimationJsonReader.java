@@ -51,6 +51,7 @@ final class AnimationJsonReader {
     private final Map<String, Asset.Kind> assetKinds = new HashMap<>();
     private final Set<String> layerIds = new HashSet<>();
     private final Set<String> slotNames = new HashSet<>();
+    private final Set<String> exportNames = new HashSet<>();
     private double duration;
 
     Animation document(Node root) throws AnimationFormatException {
@@ -173,6 +174,11 @@ final class AnimationJsonReader {
         if (!layerIds.add(id)) {
             throw idNode.error("Duplicate layer id: " + id);
         }
+        Node exportNode = node.get("exportName");
+        String exportName = exportNode.string("").strip();
+        if (!exportName.isEmpty() && !exportNames.add(exportName)) {
+            throw exportNode.error("Duplicate export name: " + exportName);
+        }
         return new LayerBase(id,
                 node.get("name").string(""),
                 node.get("visible").bool(true),
@@ -183,7 +189,7 @@ final class AnimationJsonReader {
                 number(node.get("opacity"), Defaults.OPACITY),
                 optional(node.get("mask"), this::mask),
                 effects(node.elements("effects")),
-                optional(node.get("motionPath"), this::motionPath));
+                optional(node.get("motionPath"), this::motionPath), exportName);
     }
 
     private TextLayer text(Node node, LayerBase base) throws AnimationFormatException {

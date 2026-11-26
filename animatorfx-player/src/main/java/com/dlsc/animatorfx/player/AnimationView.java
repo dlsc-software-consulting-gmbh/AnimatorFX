@@ -94,6 +94,7 @@ public class AnimationView extends Control {
     }
 
     private final AnimationPlayer player;
+    private final AnimationElements elements = new AnimationElements(this::refreshElements);
     private boolean showing;
 
     private final ChangeListener<Boolean> showingListener = (property, was, is) -> updateShowing();
@@ -144,11 +145,13 @@ public class AnimationView extends Control {
             }
         });
         player.animationProperty().addListener(observable -> {
+            elements.setDocument(getAnimation());
             requestLayout();
             autoPlayIfShowing();
         });
         fitProperty().addListener(observable -> requestLayout());
         autoPlayProperty().addListener(observable -> autoPlayIfShowing());
+        skinProperty().addListener(observable -> refreshElements());
     }
 
     private void updateShowing() {
@@ -470,6 +473,34 @@ public class AnimationView extends Control {
      */
     public Node getLayerNode(String layerId) {
         return getSkin() instanceof AnimationViewSkin skin ? skin.getLayerNode(layerId) : null;
+    }
+
+    /**
+     * A live handle to a visual layer's unique {@code exportName}, including layers inside
+     * groups. Repeated lookup returns the same handle for this view. Configure the handle
+     * before CSS creates its node; interactions and overrides follow later node replacements.
+     * Audio layers are not visual elements. Mask layers expose clip nodes, not visible content.
+     *
+     * @param exportName the exact export name, not the display name or internal layer id
+     * @return the live element handle
+     * @throws IllegalStateException if no animation is set
+     * @throws IllegalArgumentException if the current document has no visual export of that name
+     */
+    public AnimationElement getElement(String exportName) {
+        elements.setDocument(getAnimation());
+        return elements.get(exportName);
+    }
+
+    AnimationElements elements() {
+        return elements;
+    }
+
+    private void refreshElements() {
+        if (getSkin() instanceof AnimationViewSkin skin) {
+            skin.refreshElements();
+        } else {
+            elements.handles().forEach(element -> element.attach(null));
+        }
     }
 
     /**

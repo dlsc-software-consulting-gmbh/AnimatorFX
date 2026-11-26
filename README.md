@@ -54,6 +54,8 @@ animations it creates inside JavaFX applications.
 - Markers: named time ranges that can be played by name.
 - Slots, in two modes: *embedded* (your node lives inside the animation) and *in place* (your
   node stays in your layout and is moved, scaled, rotated and faded by the animation).
+- Named live elements: interact with authored content and override its text, fill or visibility
+  without losing customization during playback or node replacement.
 - Shapes (rectangle, ellipse, line, polygon, star, Bezier path), text, images, groups.
 - Solid, linear and radial paints; strokes with caps, joins and dashes; trim paths.
 - Path morphing, motion paths with orient-to-path, clip and alpha masks, blur, drop shadow, glow.
@@ -293,6 +295,45 @@ Fit and auto-play can also be set from CSS (style class `animation-view`):
 
 `view.getPlayer()` returns the `AnimationPlayer` with the remaining properties and events
 (`autoReverse`, `status`, `activeMarker`, `onFinished`, `onMarkerReached`).
+
+### Interacting with authored elements
+
+Select one visual layer in the editor and set **Layer > Export name**, for example `submit`,
+`greeting` or `accent`. Export names are independent of display names and internal IDs, and
+must be unique throughout the animation, including nested groups. An empty name keeps a layer
+private. Duplicating or pasting layers clears the copies' export names.
+
+```java
+AnimationElement submit = view.getElement("submit");
+submit.setOnMouseClicked(event -> controller.submit());
+
+view.getElement("greeting").setText("Welcome, Anna");
+view.getElement("accent").setFill(Color.CORNFLOWERBLUE);
+submit.setVisible(false);
+
+view.getElement("accent").setFill(null);  // restore the current sampled fill
+submit.clearOverrides();                 // restore authored values; keep the click handler
+```
+
+Call these methods on the JavaFX application thread after loading the document, even before
+adding the view to a scene. Text (text layers), fill (shape and text layers), and visibility
+overrides win until cleared; geometry, transforms, opacity and other properties still follow
+the animation. A visibility override changes the layer's own visibility, including its in/out
+range, but cannot overcome hidden parents, clipping or zero opacity.
+
+Each export has one stable handle per view. Its `getNode()` is `null` until the skin renders it,
+or while the export is absent. Listen to `nodeProperty()` to install other interactions such as
+tooltips on each replacement node. Click handlers registered on the handle are reattached
+automatically and removed from old nodes. Handles and overrides follow the same export name
+when the document or skin changes; a replacement of another type ignores unsupported overrides.
+An unknown visual export throws `IllegalArgumentException`; lookup without a document throws
+`IllegalStateException`. Audio layers are not visual exports. Exported mask layers expose clip
+nodes rather than independently interactive content.
+
+Do not move these nodes into another parent or bind properties controlled by the renderer.
+Shape layers expose groups containing paths, not necessarily JavaFX `Shape` instances. The
+lower-level `getLayerNode(layerId)` remains available for tooling, but direct changes to
+renderer-owned node properties can be overwritten by playback. Use slots for host-owned controls.
 
 ### Markers
 

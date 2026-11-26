@@ -64,6 +64,43 @@ class AnimationJsonTest {
     }
 
     @Test
+    void nestedExportNamesSurviveRoundTripAndLayerEdits() throws Exception {
+        Animation animation = parse(layers("""
+                {"type":"group","id":"g","exportName":"panel","children":[
+                  {"type":"text","id":"t","text":"Hello","exportName":"greeting"}
+                ]}
+                """));
+        GroupLayer group = (GroupLayer) animation.layers().getFirst();
+        Layer text = group.children().getFirst();
+        animation = animation.withLayers(List.of(group.withChildren(List.of(
+                text.withBase(text.base().withName("Renamed").withVisible(false))))));
+        String json = JsonWriter.write(AnimationJson.toJson(animation));
+
+        assertTrue(json.contains("\"exportName\": \"panel\""));
+        assertTrue(json.contains("\"exportName\": \"greeting\""));
+        assertEquals(animation, parse(json));
+    }
+
+    @Test
+    void exportNamesMustBeUniqueAcrossNestedLayers() {
+        assertRejected("layers[1].children[0].exportName", layers(
+                "{\"type\":\"text\",\"text\":\"One\",\"exportName\":\"greeting\"}",
+                "{\"type\":\"group\",\"children\":[{\"type\":\"text\",\"text\":\"Two\","
+                        + "\"exportName\":\"greeting\"}]}"));
+    }
+
+    @Test
+    void programmaticDocumentsAlsoRejectDuplicateNormalizedExportNames() throws Exception {
+        Animation animation = parse(layers(
+                "{\"type\":\"text\",\"text\":\"One\",\"exportName\":\"greeting\"}",
+                "{\"type\":\"text\",\"text\":\"Two\"}"));
+        Layer first = animation.layers().getFirst();
+        Layer second = animation.layers().get(1);
+        assertThrows(IllegalArgumentException.class, () -> animation.withLayers(List.of(first,
+                second.withBase(second.base().withExportName(" greeting ")))));
+    }
+
+    @Test
     void kitchenSinkSurvivesRoundTripThroughText() throws Exception {
         Animation a = KitchenSink.animation();
         String text = JsonWriter.write(AnimationJson.toJson(a));
