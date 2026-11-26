@@ -74,7 +74,18 @@ public final class SampleBrowser extends BorderPane {
             dialog.setOnHidden(hidden -> demo.dispose());
             dialog.show();
         });
-        HBox footer = new HBox(12, inPlace, spacer, loginDemo, dark);
+        Button liveElementsDemo = new Button("Live elements demo");
+        liveElementsDemo.setId("open-live-elements-demo");
+        liveElementsDemo.setOnAction(event -> {
+            LiveElementsDemo demo = new LiveElementsDemo();
+            Stage dialog = new Stage();
+            dialog.initOwner(getScene().getWindow());
+            dialog.setTitle("AnimatorFX - Live Elements Demo");
+            dialog.setScene(new Scene(demo, 640, 420));
+            dialog.setOnHidden(hidden -> demo.dispose());
+            dialog.show();
+        });
+        HBox footer = new HBox(12, inPlace, spacer, liveElementsDemo, loginDemo, dark);
         footer.setAlignment(Pos.CENTER_LEFT);
         footer.setPadding(new Insets(0, 16, 0, 0));
         setBottom(new VBox(new Separator(), footer));

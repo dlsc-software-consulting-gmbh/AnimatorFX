@@ -161,6 +161,11 @@ The demo sends no email, contacts no server, and keeps password changes only unt
 closes. The animation can also be opened in the editor; the interactive form is supplied by the
 sample application.
 
+The **Live elements demo** looks up exported layers in `samples/animations/live-elements.afx`
+using `AnimationView.getElement()`. Click the animated circle to change its fill and the message,
+toggle the sparkle's visibility, and reset the overrides to the authored values. See
+`LiveElementsDemo` for the application code.
+
 ![The sample application](docs/images/sample-app.png)
 
 `samples/animatorfx-sample-app` is a plain JavaFX window (Modena, no AtlantaFX) that depends on
@@ -177,6 +182,7 @@ views when the window closes. It plays the files of `samples/animations`:
 | `card.afx` | A card with a drop shadow, a masked shine sweep and two slots, `title` and `action`; marker `shine` |
 | `orbit.afx` | Two shapes following motion paths, oriented to the path, with trimmed trails and a blurred glow |
 | `attention.afx` | A single slot that wiggles, with a cue that ticks when it starts; used to animate an ordinary button in place |
+| `live-elements.afx` | Named visual layers for the interactive lookup and manipulation demo |
 
 ![Frames of loader.afx](docs/images/sample-loader.png)
 ![Frames of success.afx](docs/images/sample-success.png)

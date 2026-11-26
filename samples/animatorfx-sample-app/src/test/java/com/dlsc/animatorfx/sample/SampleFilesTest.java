@@ -182,10 +182,12 @@ class SampleFilesTest {
     }
 
     @Test
-    void theBrowserShowsEverySampleButTheInPlaceOne() {
+    void theBrowserShowsTheShowcasesButNotTheDedicatedDemos() {
         Set<String> all = SampleGenerator.all().keySet();
-        assertEquals(all.stream().filter(name -> !name.equals(Samples.ATTENTION)).toList(), Samples.SHOWCASE);
+        assertEquals(all.stream().filter(name -> !name.equals(Samples.ATTENTION)
+                && !name.equals(Samples.LIVE_ELEMENTS)).toList(), Samples.SHOWCASE);
         assertTrue(all.contains(Samples.ATTENTION));
+        assertTrue(all.contains(Samples.LIVE_ELEMENTS));
     }
 
     @ParameterizedTest
