@@ -101,6 +101,7 @@ final class SampleGenerator {
         samples.put("card", new SampleGenerator("card", 2.6).file(SampleGenerator::card));
         samples.put("orbit", new SampleGenerator("orbit", 4).file(SampleGenerator::orbit));
         samples.put("attention", new SampleGenerator("attention", 0.8).file(SampleGenerator::attention));
+        samples.put("live-elements", new SampleGenerator("live-elements", 2).file(SampleGenerator::liveElements));
         return samples;
     }
 
@@ -291,6 +292,24 @@ final class SampleGenerator {
 
         return document(360, 220, List.of(new Marker("shine", 0.8, 1.6)),
                 panel, icon, subtitle, shineMask, shine, title, action);
+    }
+
+    private Animation liveElements() {
+        Layer label = new TextLayer(base("label", "Message").withExportName("label")
+                .withTransform(Transform.at(70, 65)), "Click the circle", "System", null,
+                Animatable.of(24.0), TextLayer.Weight.BOLD, false, TextLayer.Align.LEFT,
+                Animatable.of(solid(WHITE)), null);
+        Layer button = new ShapeLayer(base("button", "Clickable circle").withExportName("button")
+                .withTransform(centred(55, 55, 160, 160).withScale(keys(
+                        key(0, Vec2.ONE, SINE_IN_OUT), key(1, new Vec2(1.12, 1.12), SINE_IN_OUT),
+                        key(2, Vec2.ONE, Easing.LINEAR)))),
+                new Geometry.Ellipse(Animatable.of(new Vec2(110, 110))), Animatable.of(solid(INDIGO)), null, null);
+        Layer sparkle = new ShapeLayer(base("sparkle", "Sparkle").withExportName("sparkle")
+                .withTransform(Transform.at(300, 160).withRotation(keys(
+                        key(0, 0.0, Easing.LINEAR), key(2, 72.0, Easing.LINEAR)))),
+                new Geometry.Star(5, Animatable.of(38.0), Animatable.of(17.0)),
+                Animatable.of(solid(AMBER)), null, null);
+        return document(400, 250, List.of(), label, button, sparkle);
     }
 
     /** Two craft follow tilted orbits, nose first, each trailing a trimmed piece of its orbit, around a glowing core. */
