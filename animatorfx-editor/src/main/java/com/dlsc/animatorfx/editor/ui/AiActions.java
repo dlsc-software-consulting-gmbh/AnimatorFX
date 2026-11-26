@@ -6,13 +6,14 @@ import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.ai.AiUsage;
 import com.dlsc.animatorfx.model.io.AnimationFile;
 import com.dlsc.gemsfx.DialogPane;
+import com.dlsc.gemsfx.ResizableTextArea;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.TextArea;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import java.util.List;
@@ -48,11 +49,13 @@ final class AiActions {
             error("Could not read AI preferences: " + AiErrors.message(ex));
             return;
         }
-        TextArea description = new TextArea();
+        ResizableTextArea description = new ResizableTextArea();
         description.setId("ai-description");
         description.setPromptText("Describe the animation or scene (up to 8,000 characters)");
         description.setWrapText(true);
         description.setPrefRowCount(6);
+        description.setMaxWidth(Double.MAX_VALUE);
+        VBox.setVgrow(description, Priority.ALWAYS);
         Label disclosure = new Label("Your description and attachments will be sent to the selected AI provider. "
                 + "Provider charges may apply.");
         disclosure.setWrapText(true);
@@ -69,6 +72,7 @@ final class AiActions {
         ButtonType generate = new ButtonType("Generate", ButtonBar.ButtonData.OK_DONE);
         DialogPane.Dialog<Void> dialog = layer.dialog(DialogPane.Type.CONFIRMATION, "Generate Animation",
                 content, 540, List.of(cancel, generate));
+        dialog.setResizable(true);
         if (layer.show(dialog, button -> {
             if (button == generate) {
                 String prompt = description.getText().trim();

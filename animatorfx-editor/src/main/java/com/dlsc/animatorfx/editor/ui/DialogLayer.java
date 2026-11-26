@@ -49,6 +49,7 @@ final class DialogLayer {
 
     DialogLayer() {
         pane.getStyleClass().add("editor-dialogs");
+        pane.getGlassPane().setEnableStageDragging(true);
         // the veil fades; the dialog gets the short entrance of show() instead of flying in from the top
         pane.setAnimateDialogs(false);
         pane.setFadeInOut(true);

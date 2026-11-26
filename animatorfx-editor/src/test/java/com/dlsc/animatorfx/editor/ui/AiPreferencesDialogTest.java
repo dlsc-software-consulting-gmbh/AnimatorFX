@@ -37,7 +37,7 @@ class AiPreferencesDialogTest {
     }
 
     @Test
-    void showsOnlyTheSelectedProviderAndPreservesEditsWhenSwitching(@TempDir Path directory) throws Exception {
+    void showsOnlyTheSelectedProviderAndPreservesModelSelectionsWhenSwitching(@TempDir Path directory) throws Exception {
         Path file = directory.resolve("prefs");
         var savedKeys = new java.util.concurrent.ConcurrentHashMap<String, String>();
         Stage stage = fx(() -> {
@@ -49,33 +49,45 @@ class AiPreferencesDialogTest {
             s.setOnHidden(event -> theme.dispose());
             s.setScene(scene);
             s.show();
-            new AiPreferencesDialog(layer, file, savedKeys::put, provider -> {}, provider -> null,
-                    (provider, secret) -> CompletableFuture.completedFuture(List.of())).show();
+            new AiPreferencesDialog(layer, file, savedKeys::put, provider -> {}, provider -> "dummy-key",
+                    (provider, secret) -> CompletableFuture.completedFuture(provider == Provider.OPENAI
+                            ? List.of("gpt-4.1", "gpt-4o")
+                            : List.of("claude-sonnet-4-5", "claude-haiku-4-5"))).show();
             scene.getRoot().applyCss();
             scene.getRoot().layout();
             return s;
         });
         try {
+            WaitForAsyncUtils.waitFor(5, TimeUnit.SECONDS, () -> fx(() ->
+                    ((ComboBox<?>) stage.getScene().lookup("#ai-openai-model")).getItems().contains("gpt-4o")));
             fx(() -> {
                 Scene scene = stage.getScene();
                 @SuppressWarnings("unchecked")
                 ChoiceBox<Provider> provider = (ChoiceBox<Provider>) scene.lookup("#ai-provider");
                 ComboBox<?> openAi = (ComboBox<?>) scene.lookup("#ai-openai-model");
                 ComboBox<?> anthropic = (ComboBox<?>) scene.lookup("#ai-anthropic-model");
+                assertFalse(openAi.isEditable());
+                assertFalse(anthropic.isEditable());
+                assertTrue(((Label) scene.lookup("#ai-model-compatibility")).getText()
+                        .contains("structured animation responses and image input"));
                 PasswordField openAiKey = (PasswordField) scene.lookup("#ai-openai-key");
                 PasswordField anthropicKey = (PasswordField) scene.lookup("#ai-anthropic-key");
                 CheckBox visualReview = (CheckBox) scene.lookup("#ai-visual-review");
                 assertFalse(visualReview.isSelected());
-                assertTrue(visualReview.getText().contains("embedded content"));
-                assertTrue(visualReview.getText().contains("provider"));
-                assertTrue(visualReview.getText().contains("cost"));
+                assertEquals("Enable AI visual review", visualReview.getText());
+                Button visualReviewInfo = (Button) scene.lookup("#ai-visual-review-info");
+                assertTrue(visualReviewInfo.getTooltip().getText().contains("beginning, middle, and end"));
+                assertTrue(visualReviewInfo.getTooltip().getText().contains("selected provider and model"));
+                assertTrue(visualReviewInfo.getTooltip().getText().contains("additional costs"));
+                assertTrue(visualReviewInfo.getTooltip().getText().contains("validated candidate"));
+                assertTrue(visualReviewInfo.getTooltip().getText().contains("does not generate image assets"));
                 visualReview.setSelected(true);
                 assertTrue(showing(openAi));
                 assertTrue(showing(openAiKey));
                 assertFalse(showing(anthropic));
                 assertFalse(showing(anthropicKey));
                 assertFalse(anthropic.getParent().getParent().isManaged());
-                openAi.getEditor().setText("edited-openai");
+                openAi.getSelectionModel().select(openAi.getItems().indexOf("gpt-4o"));
                 openAiKey.setText("openai-test-key");
                 provider.setValue(Provider.ANTHROPIC);
                 assertFalse(showing(openAi));
@@ -83,23 +95,23 @@ class AiPreferencesDialogTest {
                 assertTrue(showing(anthropic));
                 assertTrue(showing(anthropicKey));
                 assertFalse(openAi.getParent().getParent().isManaged());
-                anthropic.getEditor().setText("edited-anthropic");
+                anthropic.getSelectionModel().select(anthropic.getItems().indexOf("claude-haiku-4-5"));
                 anthropicKey.setText("anthropic-test-key");
                 provider.setValue(Provider.OPENAI);
-                assertEquals("edited-openai", openAi.getEditor().getText());
+                assertEquals("gpt-4o", openAi.getValue());
                 assertEquals("openai-test-key", openAiKey.getText());
                 provider.setValue(Provider.ANTHROPIC);
-                assertEquals("edited-anthropic", anthropic.getEditor().getText());
+                assertEquals("claude-haiku-4-5", anthropic.getValue());
                 assertEquals("anthropic-test-key", anthropicKey.getText());
                 ((Button) scene.lookup("#ai-save-preferences")).fire();
                 return null;
             });
             WaitForAsyncUtils.waitFor(5, TimeUnit.SECONDS, () -> Files.exists(file)
-                    && AiSettings.load(file).anthropicModel().equals("edited-anthropic"));
+                    && AiSettings.load(file).anthropicModel().equals("claude-haiku-4-5"));
             AiSettings settings = AiSettings.load(file);
             assertEquals(Provider.ANTHROPIC, settings.provider());
-            assertEquals("edited-openai", settings.openAiModel());
-            assertEquals("edited-anthropic", settings.anthropicModel());
+            assertEquals("gpt-4o", settings.openAiModel());
+            assertEquals("claude-haiku-4-5", settings.anthropicModel());
             assertTrue(settings.visualReview());
             assertEquals("openai-test-key", savedKeys.get("OPENAI"));
             assertEquals("anthropic-test-key", savedKeys.get("ANTHROPIC"));
@@ -125,7 +137,7 @@ class AiPreferencesDialogTest {
             AiPreferencesDialog dialog = new AiPreferencesDialog(layer, file,
                     (provider, secret) -> { key.set(secret); saved.countDown(); }, provider -> {},
                     provider -> { throw new IllegalStateException(); },
-                    (provider, secret) -> CompletableFuture.completedFuture(List.of()));
+                    (provider, secret) -> CompletableFuture.completedFuture(List.of("claude-sonnet-4-5")));
             dialog.show();
             scene.getRoot().applyCss();
             scene.getRoot().layout();
@@ -134,7 +146,7 @@ class AiPreferencesDialogTest {
             provider.setValue(Provider.ANTHROPIC);
             @SuppressWarnings("unchecked")
             ComboBox<String> model = (ComboBox<String>) scene.lookup("#ai-anthropic-model");
-            model.getEditor().setText("custom-model");
+            model.getSelectionModel().select("claude-sonnet-4-5");
             ((PasswordField) scene.lookup("#ai-anthropic-key")).setText("synthetic-secret");
             ((Button) scene.lookup("#ai-save-preferences")).fire();
             return s;
@@ -144,10 +156,10 @@ class AiPreferencesDialogTest {
             WaitForAsyncUtils.waitForFxEvents();
             WaitForAsyncUtils.waitFor(5, TimeUnit.SECONDS,
                     () -> Files.exists(file) && AiSettings.load(file).provider() == Provider.ANTHROPIC
-                            && AiSettings.load(file).anthropicModel().equals("custom-model"));
+                            && AiSettings.load(file).anthropicModel().equals("claude-sonnet-4-5"));
             AiSettings settings = AiSettings.load(file);
             assertEquals(Provider.ANTHROPIC, settings.provider());
-            assertEquals("custom-model", settings.anthropicModel());
+            assertEquals("claude-sonnet-4-5", settings.anthropicModel());
             assertEquals("synthetic-secret", key.get());
             assertFalse(Files.readString(file).contains("synthetic-secret"));
         } finally {
@@ -156,7 +168,7 @@ class AiPreferencesDialogTest {
     }
 
     @Test
-    void loadsBothProvidersAndKeepsTheSavedCustomSelections(@TempDir Path directory) throws Exception {
+    void replacesUnsupportedSavedSelectionsWithCompatibleModels(@TempDir Path directory) throws Exception {
         Path file = directory.resolve("settings.properties");
         new AiSettings(Provider.ANTHROPIC, "custom-openai", "custom-claude", true).save(file);
         Stage stage = fx(() -> {
@@ -170,7 +182,8 @@ class AiPreferencesDialogTest {
             s.show();
             new AiPreferencesDialog(layer, file, (provider, secret) -> {}, provider -> {},
                     provider -> "dummy-key", (provider, secret) -> CompletableFuture.completedFuture(
-                            provider == Provider.OPENAI ? List.of("gpt-example") : List.of("claude-example"))).show();
+                            provider == Provider.OPENAI ? List.of("gpt-4.1", "gpt-4o")
+                                    : List.of("claude-sonnet-4-5", "claude-haiku-4-5"))).show();
             scene.getRoot().applyCss();
             scene.getRoot().layout();
             return s;
@@ -179,13 +192,15 @@ class AiPreferencesDialogTest {
             WaitForAsyncUtils.waitFor(5, TimeUnit.SECONDS, () -> fx(() -> {
                 ComboBox<?> openAi = (ComboBox<?>) stage.getScene().lookup("#ai-openai-model");
                 ComboBox<?> anthropic = (ComboBox<?>) stage.getScene().lookup("#ai-anthropic-model");
-                return openAi.getItems().contains("gpt-example") && anthropic.getItems().contains("claude-example");
+                return openAi.getItems().contains("gpt-4o") && anthropic.getItems().contains("claude-haiku-4-5");
             }));
             fx(() -> {
                 ComboBox<?> openAi = (ComboBox<?>) stage.getScene().lookup("#ai-openai-model");
                 ComboBox<?> anthropic = (ComboBox<?>) stage.getScene().lookup("#ai-anthropic-model");
-                assertEquals("custom-openai", openAi.getEditor().getText());
-                assertEquals("custom-claude", anthropic.getEditor().getText());
+                assertEquals("gpt-4.1", openAi.getValue());
+                assertEquals("claude-sonnet-4-5", anthropic.getValue());
+                assertFalse(openAi.isEditable());
+                assertFalse(anthropic.isEditable());
                 assertTrue(((CheckBox) stage.getScene().lookup("#ai-visual-review")).isSelected());
                 assertFalse(showing(openAi));
                 assertTrue(showing(anthropic));

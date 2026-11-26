@@ -19,6 +19,7 @@ import com.dlsc.animatorfx.editor.session.AppDirs;
 import com.dlsc.animatorfx.editor.session.SessionState.Layout;
 import com.dlsc.animatorfx.editor.session.SessionStore;
 import com.dlsc.animatorfx.editor.timeline.TimelineView;
+import com.dlsc.gemsfx.DialogPane;
 import javafx.application.ColorScheme;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
@@ -29,6 +30,9 @@ import javafx.collections.ListChangeListener;
 import javafx.geometry.Orientation;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
@@ -330,18 +334,35 @@ public final class MainWindow {
     }
 
     void showAiGeneration() {
-        aiActions.generate();
+        if (closed) return;
+        checkAiProviderConfigured().thenAccept(available -> Platform.runLater(() -> {
+            if (closed) return;
+            if (available) aiActions.generate();
+            else showAiProviderRequired();
+        }));
     }
 
     void showAiPreferences() {
         aiPreferences.show();
     }
 
-    private void refreshAiConsole() {
-        if (closed) return;
-        long revision = ++aiConsoleRevision;
-        sidePanel.setAiConsoleAvailable(aiConsole, false);
-        CompletableFuture.supplyAsync(() -> {
+    private void showAiProviderRequired() {
+        Label message = new Label("Configure an AI provider and API key in AI Preferences before generating.");
+        message.setId("ai-provider-required-message");
+        message.setWrapText(true);
+        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType preferences = new ButtonType("Open AI Preferences", ButtonBar.ButtonData.OK_DONE);
+        DialogPane.Dialog<Void> dialog = dialogLayer.dialog(DialogPane.Type.WARNING, "AI Provider Required",
+                message, 440, List.of(cancel, preferences));
+        if (dialogLayer.show(dialog, button -> {
+            if (button == preferences) Platform.runLater(aiPreferences::show);
+        })) {
+            dialog.getButton(preferences).setId("ai-open-preferences");
+        }
+    }
+
+    private CompletableFuture<Boolean> checkAiProviderConfigured() {
+        return CompletableFuture.supplyAsync(() -> {
             try {
                 AiSettings settings = AiSettings.load(aiSettings);
                 String key = readAiKey.apply(settings.provider().name());
@@ -349,7 +370,14 @@ public final class MainWindow {
             } catch (Exception | LinkageError ex) {
                 return false;
             }
-        }).thenAccept(available -> Platform.runLater(() -> {
+        });
+    }
+
+    private void refreshAiConsole() {
+        if (closed) return;
+        long revision = ++aiConsoleRevision;
+        sidePanel.setAiConsoleAvailable(aiConsole, false);
+        checkAiProviderConfigured().thenAccept(available -> Platform.runLater(() -> {
             if (!closed && revision == aiConsoleRevision) sidePanel.setAiConsoleAvailable(aiConsole, available);
         }));
     }

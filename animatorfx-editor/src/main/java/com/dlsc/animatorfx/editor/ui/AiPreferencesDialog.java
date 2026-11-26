@@ -5,6 +5,7 @@ import com.dlsc.animatorfx.editor.ai.AiErrors;
 import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.gemsfx.DialogPane;
 import javafx.application.Platform;
+import javafx.geometry.Pos;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
@@ -13,10 +14,12 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
-import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.material2.Material2AL;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -83,13 +86,29 @@ final class AiPreferencesDialog {
         Label explanation = new Label("API keys are stored in your operating system's secure credential store. "
                 + "They are not saved in animation files.");
         explanation.setWrapText(true);
-        Label compatibility = new Label("Some listed models may not support structured animation generation.");
+        Label compatibility = new Label("Only models supporting structured animation responses and image input are listed.");
+        compatibility.setId("ai-model-compatibility");
         compatibility.setWrapText(true);
-        CheckBox visualReview = new CheckBox("Enable AI visual review. Rendered frames may include embedded content "
-                + "sent to the provider and may incur extra costs.");
+        CheckBox visualReview = new CheckBox("Enable AI visual review");
         visualReview.setId("ai-visual-review");
         visualReview.setWrapText(true);
         visualReview.setSelected(settings.visualReview());
+        String visualReviewExplanation = "After an AI edit is generated and validated, AnimatorFX renders three small "
+                + "frames (beginning, middle, and end) and sends them with the request context to the same selected "
+                + "provider and model for optional refinement. It does not generate image assets or inspect a screenshot "
+                + "of the editor. The frames may reveal embedded project content and may incur additional costs. If "
+                + "review is unavailable or fails, including for projects with video layers, the validated candidate is kept.";
+        Button visualReviewInfo = new Button(null, new FontIcon(Material2AL.INFO));
+        visualReviewInfo.setId("ai-visual-review-info");
+        visualReviewInfo.getStyleClass().add("icon-button");
+        visualReviewInfo.setAccessibleText("AI visual review information");
+        visualReviewInfo.setAccessibleHelp(visualReviewExplanation);
+        Tooltip visualReviewTooltip = new Tooltip(visualReviewExplanation);
+        visualReviewTooltip.setWrapText(true);
+        visualReviewTooltip.setMaxWidth(360);
+        visualReviewInfo.setTooltip(visualReviewTooltip);
+        HBox visualReviewRow = new HBox(6, visualReview, visualReviewInfo);
+        visualReviewRow.setAlignment(Pos.CENTER_LEFT);
         VBox openAiFields = new VBox(8, new Label("OpenAI model"), openAiModel.row, openAiModel.status,
                 new Label("OpenAI API key"), openAiKey, removeOpenAi);
         VBox anthropicFields = new VBox(8, new Label("Anthropic model"), anthropicModel.row, anthropicModel.status,
@@ -99,14 +118,10 @@ final class AiPreferencesDialog {
         anthropicFields.visibleProperty().bind(provider.valueProperty().isEqualTo(Provider.ANTHROPIC));
         anthropicFields.managedProperty().bind(anthropicFields.visibleProperty());
         VBox content = new VBox(8, explanation, new Label("Provider"), provider,
-                compatibility, openAiFields, anthropicFields, visualReview);
-        ScrollPane scroll = new ScrollPane(content);
-        scroll.setFitToWidth(true);
-        scroll.setPrefViewportHeight(300);
-        scroll.setMaxHeight(330);
+                compatibility, openAiFields, anthropicFields, visualReviewRow);
         ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
         ButtonType save = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
-        DialogPane.Dialog<Void> dialog = layer.dialog(DialogPane.Type.CONFIRMATION, "AI Preferences", scroll,
+        DialogPane.Dialog<Void> dialog = layer.dialog(DialogPane.Type.CONFIRMATION, "AI Preferences", content,
                 540, List.of(cancel, save));
         if (layer.show(dialog, button -> {
             openAiModel.close();
@@ -114,8 +129,8 @@ final class AiPreferencesDialog {
             if (button != save) return;
             AiSettings updated;
             try {
-                updated = new AiSettings(provider.getValue(), openAiModel.model.getEditor().getText().trim(),
-                        anthropicModel.model.getEditor().getText().trim(), visualReview.isSelected());
+                updated = new AiSettings(provider.getValue(), openAiModel.model.getValue().trim(),
+                        anthropicModel.model.getValue().trim(), visualReview.isSelected());
             } catch (RuntimeException ex) {
                 Platform.runLater(() -> error("Enter a model name for each provider."));
                 return;
@@ -148,10 +163,9 @@ final class AiPreferencesDialog {
             this.key = key;
             String id = provider == Provider.OPENAI ? "openai" : "anthropic";
             model.setId("ai-" + id + "-model");
-            model.setEditable(true);
+            model.setEditable(false);
             model.setMaxWidth(Double.MAX_VALUE);
             model.setValue(selected);
-            model.getEditor().setText(selected);
             HBox.setHgrow(model, Priority.ALWAYS);
             refresh.setId("ai-" + id + "-refresh");
             refresh.disableProperty().bind(remove.selectedProperty());
@@ -166,11 +180,10 @@ final class AiPreferencesDialog {
             revision++;
             if (active != null) active.cancel(true);
             active = null;
-            String value = model.getEditor().getText();
+            String value = model.getValue();
             model.getItems().clear();
             model.setValue(value);
-            model.getEditor().setText(value);
-            status.setText("Refresh to load models, or enter a model ID.");
+            status.setText("Refresh with a provider API key to load compatible models.");
         }
 
         private void refresh() {
@@ -208,15 +221,15 @@ final class AiPreferencesDialog {
                 if (closed || current != revision) return;
                 active = null;
                 if (failure != null || models == null) {
-                    status.setText(failure == null ? "No API key is available. Enter a key or a model ID."
-                            : "Could not load models: " + AiErrors.message(failure) + " Enter a model ID or refresh.");
+                    status.setText(failure == null ? "No API key is available. Add a key to load compatible models."
+                            : "Could not load models: " + AiErrors.message(failure) + " Refresh to try again.");
                 } else {
-                    String value = model.getEditor().getText();
+                    String value = model.getValue();
                     model.getItems().setAll(models);
-                    model.setValue(value);
-                    model.getEditor().setText(value);
-                    status.setText(models.isEmpty() ? "No models available; enter a model ID."
-                            : models.size() + " models available.");
+                    if (models.contains(value)) model.setValue(value);
+                    else if (!models.isEmpty()) model.getSelectionModel().selectFirst();
+                    status.setText(models.isEmpty() ? "No compatible models are available for this API key."
+                            : models.size() + " compatible models available.");
                 }
             }));
         }

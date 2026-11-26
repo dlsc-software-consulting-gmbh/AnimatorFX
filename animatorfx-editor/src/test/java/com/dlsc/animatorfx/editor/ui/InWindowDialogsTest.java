@@ -40,6 +40,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,7 +69,7 @@ class InWindowDialogsTest {
             MainWindow window = fx(() -> {
                 MainWindow w = new MainWindow(new Stage(), new SessionStore(dir.resolve("config")),
                         new RecoveryStore(dir.resolve("config").resolve("recovery")), null,
-                        provider -> { throw new IllegalStateException(); },
+                        provider -> "test-key",
                         (provider, key) -> java.util.concurrent.CompletableFuture.completedFuture(List.of()));
                 w.getStage().setWidth(1100);
                 w.getStage().setHeight(720);
@@ -81,8 +82,40 @@ class InWindowDialogsTest {
             settle(window);
             assertNotNull(fx(() -> window.getScene().lookup("#ai-description")));
             type(window, KeyCode.ESCAPE);
-            run(() -> window.menuItem("menu-edit-ai-preferences").fire());
+            var preferences = window.menuItem("menu-file-ai-preferences");
+            assertEquals("menu-file", preferences.getParentMenu().getId());
+            run(preferences::fire);
             settle(window);
+            assertNotNull(fx(() -> window.getScene().lookup("#ai-provider")));
+        } finally {
+            if (old == null) System.clearProperty("animatorfx.configDir");
+            else System.setProperty("animatorfx.configDir", old);
+        }
+    }
+
+    @Test
+    void generationOffersPreferencesWhenNoProviderKeyIsConfigured() throws Exception {
+        String old = System.getProperty("animatorfx.configDir");
+        System.setProperty("animatorfx.configDir", dir.resolve("ai-config").toString());
+        try {
+            MainWindow window = fx(() -> {
+                MainWindow w = new MainWindow(new Stage(), new SessionStore(dir.resolve("config")),
+                        new RecoveryStore(dir.resolve("config").resolve("recovery")), null,
+                        provider -> null,
+                        (provider, key) -> java.util.concurrent.CompletableFuture.completedFuture(List.of()));
+                w.getStage().setWidth(1100);
+                w.getStage().setHeight(720);
+                w.show();
+                return w;
+            });
+            windows.add(window);
+            settle(window);
+            var generate = window.menuItem("menu-file-ai-generate");
+            assertFalse(generate.isDisable());
+            run(generate::fire);
+            WaitForAsyncUtils.waitFor(5, TimeUnit.SECONDS,
+                    () -> fx(() -> window.getScene().lookup("#ai-provider-required-message") != null));
+            click(window, "Open AI Preferences");
             assertNotNull(fx(() -> window.getScene().lookup("#ai-provider")));
         } finally {
             if (old == null) System.clearProperty("animatorfx.configDir");

@@ -9,6 +9,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,6 +22,15 @@ import java.util.concurrent.TimeUnit;
 
 /** Lists models visible to a provider credential. */
 public final class AiModelCatalog {
+    // The OpenAI Models API does not expose per-model capability metadata.
+    private static final List<String> SUPPORTED_OPENAI_MODELS = List.of(
+            "gpt-4.1",
+            "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-luna",
+            "gpt-4o", "gpt-4.1-2025-04-14", "gpt-4o-2024-08-06",
+            "gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1-nano",
+            "gpt-4.1-mini-2025-04-14", "gpt-4o-mini-2024-07-18", "gpt-4.1-nano-2025-04-14");
+    private static final String ANTHROPIC_MODELS_API_VERSION = "2026-10-21";
+
     private final HttpClient client;
     private final URI openAi;
     private final URI anthropic;
@@ -58,8 +70,10 @@ public final class AiModelCatalog {
         private final CompletableFuture<List<String>> result = new CompletableFuture<>();
         private final Set<String> ids = new LinkedHashSet<>();
         private final Set<String> cursors = new HashSet<>();
+        private final Map<String, String> lines = new HashMap<>();
         private CompletableFuture<HttpResponse<byte[]>> network;
         private int pages;
+        private int modelCount;
 
         private Request(AiProviderClient.Provider provider, String key) {
             this.provider = provider;
@@ -78,7 +92,7 @@ public final class AiModelCatalog {
                 if (provider == AiProviderClient.Provider.OPENAI) {
                     builder.header("Authorization", "Bearer " + key);
                 } else {
-                    builder.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+                    builder.header("x-api-key", key).header("anthropic-version", ANTHROPIC_MODELS_API_VERSION);
                 }
                 CompletableFuture<HttpResponse<byte[]>> sent;
                 long logId;
@@ -117,9 +131,16 @@ public final class AiModelCatalog {
                     || !(root.get("data") instanceof List<?> models)) throw new IllegalArgumentException();
             for (Object value : models) {
                 if (!(value instanceof Map<?, ?> model) || !(model.get("id") instanceof String id)
-                        || id.isBlank() || id.length() > 200) throw new IllegalArgumentException();
-                ids.add(id);
-                if (ids.size() > 50_000) throw new IllegalArgumentException();
+                        || id.isBlank() || id.length() > 200 || ++modelCount > 50_000) {
+                    throw new IllegalArgumentException();
+                }
+                if (isSupported(model, id)) {
+                    ids.add(id);
+                    if (provider == AiProviderClient.Provider.ANTHROPIC
+                            && model.get("line") instanceof String line) {
+                        lines.putIfAbsent(id, line);
+                    }
+                }
             }
             if (provider == AiProviderClient.Provider.ANTHROPIC) {
                 if (!(root.get("has_more") instanceof Boolean more)) throw new IllegalArgumentException();
@@ -130,7 +151,41 @@ public final class AiModelCatalog {
                     return;
                 }
             }
-            result.complete(List.copyOf(ids));
+            result.complete(orderedModels());
+        }
+
+        private List<String> orderedModels() {
+            if (provider == AiProviderClient.Provider.OPENAI) {
+                return SUPPORTED_OPENAI_MODELS.stream().filter(ids::contains).toList();
+            }
+            List<String> ordered = new ArrayList<>(ids);
+            ordered.sort(Comparator.comparingInt(this::anthropicRank));
+            return List.copyOf(ordered);
+        }
+
+        private int anthropicRank(String id) {
+            if (AiSettings.defaults().anthropicModel().equals(id)) return 0;
+            return switch (lines.getOrDefault(id, "")) {
+                case "sonnet" -> 1;
+                case "opus", "mythos" -> 2;
+                case "fable" -> 3;
+                case "haiku" -> 4;
+                default -> 3;
+            };
+        }
+
+        private boolean isSupported(Map<?, ?> model, String id) {
+            if (provider == AiProviderClient.Provider.OPENAI) return SUPPORTED_OPENAI_MODELS.contains(id);
+            return "active".equals(model.get("lifecycle"))
+                    && supports(model, "structured_outputs") && supports(model, "image_input");
+        }
+
+        private boolean supports(Map<?, ?> model, String capabilityName) {
+            if (!(model.get("capabilities") instanceof Map<?, ?> capabilities)
+                    || !(capabilities.get(capabilityName) instanceof Map<?, ?> capability)) {
+                return false;
+            }
+            return Boolean.TRUE.equals(capability.get("supported"));
         }
 
         private void fail(String reason) {

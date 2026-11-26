@@ -100,6 +100,7 @@ final class MenuBarFactory {
         menu.getItems().addAll(
                 item("menu-file-new", "New", shortcut(KeyCode.N), files::newDocument),
                 item("menu-file-ai-generate", "Generate with AI…", null, window::showAiGeneration),
+                item("menu-file-ai-preferences", "AI Preferences…", null, window::showAiPreferences),
                 item("menu-file-open", "Open…", shortcut(KeyCode.O), files::open),
                 recentMenu(),
                 new SeparatorMenuItem(),
@@ -230,9 +231,7 @@ final class MenuBarFactory {
                 new SeparatorMenuItem(),
                 forward, backward, front, back,
                 new SeparatorMenuItem(),
-                editPath, convert,
-                new SeparatorMenuItem(),
-                item("menu-edit-ai-preferences", "AI Preferences…", null, window::showAiPreferences));
+                editPath, convert);
         return menu;
     }
 

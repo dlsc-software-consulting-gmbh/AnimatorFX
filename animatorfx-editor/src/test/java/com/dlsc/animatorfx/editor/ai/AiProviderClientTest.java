@@ -19,6 +19,8 @@ import java.util.Base64;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
@@ -27,6 +29,8 @@ import java.util.logging.Logger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AiProviderClientTest {
+
+    private static final Executor SERVER_EXECUTOR = task -> Thread.ofVirtual().name("fake-ai-provider").start(task);
 
     @Test
     void generationCollectsProviderReportedTokens() throws Exception {
@@ -147,7 +151,7 @@ class AiProviderClientTest {
                 } catch (Exception ex) {
                     throw new RuntimeException(ex);
                 }
-            });
+            }, SERVER_EXECUTOR);
             var future = client(server).generate(AiProviderClient.Provider.OPENAI, "model", "key",
                     "scene", Map.of(), usage);
             try {
@@ -259,7 +263,7 @@ class AiProviderClientTest {
             } catch (Exception ex) {
                 if (release.getCount() != 0) throw new RuntimeException(ex);
             }
-        });
+        }, SERVER_EXECUTOR);
     }
 
     @Test
@@ -687,7 +691,8 @@ class AiProviderClientTest {
             AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), name -> "test-key",
                     (selected, model, key, prompt) -> provider.generate(selected, model, key, prompt, AiAnimation.schema()));
             AiSettings settings = new AiSettings(AiProviderClient.Provider.ANTHROPIC, "openai", "claude");
-            var failure = assertThrows(CompletionException.class, () -> service.generate(settings, "scene").join());
+            var failure = assertThrows(ExecutionException.class,
+                    () -> service.generate(settings, "scene").get(5, TimeUnit.SECONDS));
             assertTrue(failure.getCause().getMessage().contains("invalid animation"));
             assertTrue(failure.getCause().getMessage().toLowerCase().contains("duplicate"));
         }
@@ -733,7 +738,7 @@ class AiProviderClientTest {
                 } catch (Exception ex) {
                     throw new RuntimeException(ex);
                 }
-            });
+            }, SERVER_EXECUTOR);
             var request = review
                     ? client(server).review(provider, "model", "test-key", "draw a circle",
                             List.of(new byte[] {1}), Map.of("type", "object"), "review")
@@ -788,8 +793,8 @@ class AiProviderClientTest {
             AiProviderClient provider = client(server);
             AiGenerationService service = new AiGenerationService(directory.resolve("prefs"), name -> "test-key",
                     (selected, model, key, prompt) -> provider.generate(selected, model, key, prompt, Map.of()));
-            CompletionException error = assertThrows(CompletionException.class,
-                    () -> service.generate("a scene").join());
+            ExecutionException error = assertThrows(ExecutionException.class,
+                    () -> service.generate("a scene").get(5, TimeUnit.SECONDS));
             assertTrue(error.getCause().getMessage().contains("HTTP 400"));
             assertTrue(error.getCause().getMessage().contains("Schema is not supported"));
         }
@@ -867,6 +872,6 @@ class AiProviderClientTest {
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-        });
+        }, SERVER_EXECUTOR);
     }
 }

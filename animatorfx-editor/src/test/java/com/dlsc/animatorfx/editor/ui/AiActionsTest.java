@@ -7,11 +7,14 @@ import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.io.AnimationFile;
+import com.dlsc.gemsfx.ResizableTextArea;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Label;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -36,6 +39,57 @@ class AiActionsTest {
     @BeforeAll
     static void startToolkit() throws Exception {
         FxToolkit.registerPrimaryStage();
+    }
+
+    @Test
+    void enablesDraggingOnTheGemsFxGlassPane() throws Exception {
+        Fixture fixture = fx(() -> new Fixture(new CompletableFuture<>()));
+        try {
+            assertTrue(fx(() -> fixture.layer.getPane().getGlassPane().isEnableStageDragging()));
+        } finally {
+            fx(() -> { fixture.actions.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void generationDialogIsResizable() throws Exception {
+        Fixture fixture = fx(() -> new Fixture(new CompletableFuture<>()));
+        try {
+            fx(() -> {
+                fixture.actions.generate();
+                return null;
+            });
+            assertTrue(fx(() -> fixture.layer.getPane().getDialogs().getLast().isResizable()));
+        } finally {
+            fx(() -> { fixture.actions.dispose(); fixture.stage.hide(); return null; });
+        }
+    }
+
+    @Test
+    void generationPromptFillsAvailableDialogSpace() throws Exception {
+        Fixture fixture = fx(() -> new Fixture(new CompletableFuture<>()));
+        try {
+            fx(() -> {
+                fixture.actions.generate();
+                fixture.scene.getRoot().applyCss();
+                fixture.scene.getRoot().layout();
+                ResizableTextArea description = assertInstanceOf(ResizableTextArea.class,
+                        fixture.scene.lookup("#ai-description"));
+                assertEquals(Double.MAX_VALUE, description.getMaxWidth());
+                assertEquals(Priority.ALWAYS, VBox.getVgrow(description));
+                double initialWidth = description.getWidth();
+                double initialHeight = description.getHeight();
+                var dialog = fixture.layer.getPane().getDialogs().getLast();
+                dialog.setPrefWidth(680);
+                dialog.setPrefHeight(520);
+                fixture.scene.getRoot().layout();
+                assertTrue(description.getWidth() > initialWidth);
+                assertTrue(description.getHeight() > initialHeight);
+                return null;
+            });
+        } finally {
+            fx(() -> { fixture.actions.dispose(); fixture.stage.hide(); return null; });
+        }
     }
 
     @Test
