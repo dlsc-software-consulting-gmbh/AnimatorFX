@@ -253,6 +253,36 @@ Use JavaFX's application thread to configure and control the view. A view pauses
 
 If the animation has a marker named `intro`, replace `view.play()` with `view.playMarker("intro")`. A marker plays just its range and respects cycle count and auto-reverse. Use an exact name: an unknown marker raises `IllegalArgumentException`. The underlying `AnimationPlayer`, available through `view.getPlayer()`, exposes `setOnFinished` and `setOnMarkerReached`.
 
+### Interact with an authored element
+
+Select one visual layer and give it an **Export name** in the **Layer** inspector. The name
+must be unique across the entire animation, including groups. It is separate from the layer's
+display name; leave it empty to keep the layer private. Duplicated and pasted copies start
+without export names.
+
+After loading that animation, use the names from your application:
+
+```java
+// Import: javafx.scene.paint.Color
+view.getElement("submit").setOnMouseClicked(event -> controller.submit());
+view.getElement("greeting").setText("Welcome, Anna");
+view.getElement("accent").setFill(Color.CORNFLOWERBLUE);
+view.getElement("submit").setVisible(false);
+```
+
+Configure handles on the JavaFX application thread, even before showing the view. Text overrides
+apply to text layers, fill overrides to shape or text layers, and visibility overrides to visual
+layers. Application overrides win during playback; all other properties continue to animate.
+Pass `null` to clear one override or call `clearOverrides()` to restore all authored values
+without removing the registered click handler.
+
+Handles follow their export names across document and skin replacements. `getNode()` is `null`
+before rendering or while an export is absent. Listen to `nodeProperty()` to install additional
+interactions such as tooltips whenever a node is replaced. Do not reparent the rendered node or
+bind its animation-controlled properties. Unknown exports raise `IllegalArgumentException`.
+Audio layers cannot be accessed as visual elements; mask layers expose clip nodes, not separately
+interactive artwork. Use slots below for application-owned controls.
+
 ### Put a JavaFX node into the animation
 
 Use an **embedded binding** when the animation should own the node's placement. For example, package `samples/animations/card.afx` as `src/main/resources/animations/card.afx`. In your `start` method, load it in place of `slide.afx` and bind these nodes before playback:

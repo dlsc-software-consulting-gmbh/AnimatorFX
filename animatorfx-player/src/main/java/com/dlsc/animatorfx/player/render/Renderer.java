@@ -203,6 +203,16 @@ public final class Renderer {
     }
 
     /**
+     * Sets application overrides on every rendering of a layer, including mask copies.
+     * Null values restore authored values. Follow with {@link #apply(Frame)} to render them.
+     */
+    public void setLayerOverrides(String layerId, String text, javafx.scene.paint.Paint fill, Boolean visible) {
+        for (LayerNode node : nodes) {
+            if (node.id.equals(layerId)) node.setOverrides(text, fill, visible, assets);
+        }
+    }
+
+    /**
      * The container for the node bound to a slot, or {@code null} if the document has no slot of
      * that name. It is the slot layer's node. Its children are not resized by the container.
      */

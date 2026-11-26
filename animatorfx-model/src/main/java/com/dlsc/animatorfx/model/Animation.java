@@ -1,8 +1,11 @@
 package com.dlsc.animatorfx.model;
 
+import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * An animation document. Size is in document pixels, duration in seconds; the frame rate is used
@@ -22,6 +25,22 @@ public record Animation(int formatVersion, String name, double width, double hei
         assets = List.copyOf(assets);
         layers = List.copyOf(layers);
         cues = List.copyOf(cues);
+        validateExportNames(layers);
+    }
+
+    private static void validateExportNames(List<Layer> layers) {
+        Set<String> names = new HashSet<>();
+        ArrayDeque<Layer> pending = new ArrayDeque<>(layers);
+        while (!pending.isEmpty()) {
+            Layer layer = pending.removeFirst();
+            String name = layer.base().exportName();
+            if (!name.isEmpty() && !names.add(name)) {
+                throw new IllegalArgumentException("Duplicate export name: " + name);
+            }
+            if (layer instanceof GroupLayer group) {
+                pending.addAll(group.children());
+            }
+        }
     }
 
     /**

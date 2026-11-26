@@ -492,6 +492,41 @@ class InspectorViewTest extends EditorUiTest {
     // ------------------------------------------------------------------ layer section
 
     @Test
+    void exportNameIsIndependentUndoableAndUniqueIncludingNestedLayers() {
+        TextValueField export = lookup("#inspector-layer-export-name");
+        type(export, "  accent  ");
+        assertEquals("accent", layer("a").base().exportName());
+        type(lookup("#" + LayerSection.NAME_ID), "Renamed");
+        assertEquals("accent", layer("a").base().exportName());
+
+        select("b");
+        type(export, "accent");
+        assertTrue(fx(() -> export.getError().isPresent()));
+        assertEquals("", layer("b").base().exportName());
+
+        type(export, "action");
+        assertEquals("action", layer("b").base().exportName());
+        run(doc::undo);
+        layout();
+        assertEquals("", layer("b").base().exportName());
+        run(doc::redo);
+        layout();
+        assertEquals("action", layer("b").base().exportName());
+        type(export, "");
+        assertEquals("", layer("b").base().exportName());
+
+        add(group("g", rect("child", 0, 0, 10, 10)));
+        select("child");
+        type(export, "accent");
+        assertTrue(fx(() -> export.getError().isPresent()));
+        assertEquals("", layer("child").base().exportName());
+        select("a", "b");
+        assertTrue(fx(export::isDisabled));
+        select();
+        assertTrue(fx(() -> export.getError().isEmpty()));
+    }
+
+    @Test
     void theLayerSectionEditsNameRangeAndFlags() {
         type(lookup("#" + LayerSection.NAME_ID), "Badge");
         assertEquals("Badge", layer("a").name());
