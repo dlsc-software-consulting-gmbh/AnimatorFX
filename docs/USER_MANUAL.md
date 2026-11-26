@@ -10,7 +10,7 @@ Create a keyframed animation, save it as an `.afx` document, and play it inside 
 
 - [1. Get started](#1-get-started) — Launch the editor and find your way around.
 - [2. Make your first animation](#2-make-your-first-animation) — Animate a shape, preview it, and save it.
-- [3. Build a composition](#3-build-a-composition) — Organize layers, import artwork, generate with AI, and add markers or slots.
+- [3. Build a composition](#3-build-a-composition) — Organize layers, import artwork, generate or edit with AI attachments, and name markers, slots or live elements.
 - [4. Add sound](#4-add-sound) — Work with audio layers, waveforms, and cues.
 - [5. Embed in JavaFX](#5-embed-in-javafx) — Add the player, package an `.afx` file, and run it.
 - [6. Connect animations to your UI](#6-connect-animations-to-your-ui) — Play named ranges and animate application nodes.
@@ -96,14 +96,32 @@ Use **File → Import** for SVG, Lottie JSON, or FXML. These imports open a new 
 
 ### Generate with AI
 
-Choose **File → Generate with AI…** to describe an animation and let the AI provider selected in **Edit → AI Preferences…** build it. Generation runs in the background. When it is ready, click **Open Animation** in its notification to open the result as a new document.
+Choose **File → AI Preferences…** to select OpenAI or Anthropic and save an API key in the operating system's secure credential store. The model dropdowns are non-editable and offer only models supporting structured animation responses and image input, ordered for AnimatorFX. Use **Refresh** after entering a key.
+
+Choose **File → Generate with AI…** to describe an animation and let the selected provider build it. If a provider key and model are missing, the editor offers **Open AI Preferences**. Generation runs in the background. When it is ready, click **Open Animation** in its notification to open the result as a new document.
 
 To use your own artwork, click **Add Files…** in the generation dialog or drop files onto its **Attachments** area. You can attach up to five PNG, JPEG, GIF, or SVG files of at most 5 MB each. The AI either places an attachment in the animation (images as image layers, SVGs as editable vector layers) or uses it only as a reference for colors, style, and layout. Say in your description how each file should be used, for example "animate my logo into the center" or "use the colors of the photo". Only placed attachments are embedded in the document. Attachments are sent to the AI provider together with your description.
+
+### Edit with AI Chat and attachments
+
+With a provider key and model configured, open **AI Console → Chat** in the side panel to request changes to the active document. Chat can add or edit layers and keyframes; an accepted response is one undoable edit. Changes are discarded if the document changes during the request, and locked content is not modified.
+
+1. Choose **Project image…** in the attachment tray to select an existing project image. Only your explicit selections are attached; the rest of the project's asset library is not shared.
+2. Alternatively, click **Add Files…** or drop external PNG, JPEG, GIF or SVG files onto the tray. You can combine project images and external files, up to five attachments per message. External files are limited to 5 MB each.
+3. Inspect the preview chips and remove any unwanted attachments. Invalid files or previews over 200 KB show an inline error. If a selected project image becomes unavailable after an edit or undo, restore it or remove its chip before sending.
+4. Describe the intended use and click **Send**. For example: "Reuse this project image in the closing scene" or "Add this SVG logo as editable artwork."
+
+The AI receives bounded PNG previews and attachment names, not the original files or local paths. Existing project images, including SVG image assets, keep their asset IDs when reused. Referenced external rasters become embedded image assets, and external SVGs become editable vector layers. Unused external attachments are not embedded; new layers and assets are applied and undone together.
+
+Sending clears the attachment tray. A later message must attach its artwork again: conversation history retains attachment names but not image bytes. Switching documents also clears draft attachments. Project image choices update as assets are added, removed, undone or redone.
+
+Requests share project structure, layer names, text, selection, playhead and recent conversation with the selected provider and may incur charges. **Enable AI visual review** in AI Preferences optionally sends three rendered frames for refinement; its information icon explains the behavior. Review can reveal embedded project content and adds provider calls. If review fails or is unavailable, the validated edit is retained. **Activity** reports progress and errors; terminal request logs can contain private project content.
 
 ### Name the parts your app will use
 
 - **Marker:** a named time range, such as `intro`. Double-click empty space in the marker lane beneath the ruler to create one. Drag its body to move it, drag an edge to resize it, or double-click the marker to rename it. JavaFX can play the range by name.
 - **Slot:** a named placeholder for a JavaFX node. Choose the **Slot** tool (**K**), drag a rectangle, and give it a unique name such as `title`. Animate the slot just like a visual layer. Use the same name when you bind the node in Java.
+- **Live element:** select one unlocked visual layer and set **Layer → Export name**, such as `greeting`. This exposes the authored layer to your application without replacing it with a slot. Export names must be unique throughout the document, including nested groups; they are separate from display names and internal IDs. An empty export name keeps a layer private, and duplicated or pasted copies start without exports. See [Interact with an authored element](#interact-with-an-authored-element).
 
 ## 4. Add sound
 
@@ -255,6 +273,8 @@ If the animation has a marker named `intro`, replace `view.play()` with `view.pl
 
 ### Interact with an authored element
 
+A **live element** lets your application interact with existing animated artwork instead of supplying its own node in a slot.
+
 Select one visual layer and give it an **Export name** in the **Layer** inspector. The name
 must be unique across the entire animation, including groups. It is separate from the layer's
 display name; leave it empty to keep the layer private. Duplicated and pasted copies start
@@ -282,6 +302,10 @@ interactions such as tooltips whenever a node is replaced. Do not reparent the r
 bind its animation-controlled properties. Unknown exports raise `IllegalArgumentException`.
 Audio layers cannot be accessed as visual elements; mask layers expose clip nodes, not separately
 interactive artwork. Use slots below for application-owned controls.
+
+Overrides customize playback without changing the saved `.afx` document. They remain on the handle while its export is absent and apply again when it returns. A replacement layer of another type ignores unsupported overrides. Visibility changes the layer's own visibility, including its active interval, but cannot overcome hidden parents, clipping or zero opacity. Looking up an element before loading a document raises `IllegalStateException`.
+
+Run the sample application's **Live elements demo** for a complete example. It loads `samples/animations/live-elements.afx`: click the animated circle to change its fill and greeting, toggle the sparkle's visibility, and reset the overrides. The implementation is in `LiveElementsDemo`.
 
 ### Put a JavaFX node into the animation
 

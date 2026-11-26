@@ -14,6 +14,10 @@ animations it creates inside JavaFX applications.
 - An animation can carry **sound**: audio layers that play in sync with it and cues that fire
   at a point in time.
 - Embedded **video layers** play MP4/M4V picture and sound together on the animation timeline.
+- **Live elements** expose named authored layers to your application for click handling and
+  persistent text, fill and visibility overrides.
+- **AI Chat attachments** let you explicitly share project images or external artwork with the
+  AI to inspect, reuse or place in an undoable edit.
 
 **User manual:** [Read online](docs/USER_MANUAL.md) · [Download the PDF](docs/AnimatorFX-User-Manual.pdf)
 
@@ -77,6 +81,9 @@ animations it creates inside JavaFX applications.
 - Video import, reusable assets, rectangular canvas editing, inspector controls and clip bars.
 - Inspector with a keyframe toggle on every animatable property and a cubic-bezier easing editor.
 - Auto-key, undo/redo, copy/paste of layers and keyframes, groups.
+- Unique export names in the Layer inspector for application-facing live elements.
+- AI generation and project editing with OpenAI or Anthropic, including removable image/SVG
+  attachments, optional visual review and an activity console.
 - Import of SVG, Lottie JSON (with embedded sounds) and FXML.
 - Export to Lottie: a dotLottie archive or Lottie JSON, with a report of what Lottie cannot hold.
 - Dark and light theme, or follow the system.
@@ -336,6 +343,10 @@ An unknown visual export throws `IllegalArgumentException`; lookup without a doc
 `IllegalStateException`. Audio layers are not visual exports. Exported mask layers expose clip
 nodes rather than independently interactive content.
 
+Overrides are runtime customization, not changes to the saved `.afx` document. They remain on
+the handle while its export is temporarily absent and apply again if that export returns.
+Try the [Live elements demo](#the-sample-application) for a complete interactive example.
+
 Do not move these nodes into another parent or bind properties controlled by the renderer.
 Shape layers expose groups containing paths, not necessarily JavaFX `Shape` instances. The
 lower-level `getLayerNode(layerId)` remains available for tooling, but direct changes to
@@ -489,25 +500,51 @@ dialogs of the operating system.
 
 ### AI-generated animations
 
-AnimatorFX uses LangChain4j for generation. Choose *Edit ▸ AI Preferences…* to select OpenAI or
+AnimatorFX uses LangChain4j for generation. Choose *File ▸ AI Preferences…* to select OpenAI or
 Anthropic and save the provider's API key in
-the operating system's credential store. The model dropdowns load models available to each key;
-use *Refresh* after entering a new key, or type a model ID manually. Not every listed model
-supports structured animation generation. On Linux, a working Secret Service or GNOME Keyring is
+the operating system's credential store. The non-editable model dropdowns list only models
+available to the key that support structured animation responses and image input, ordered by
+suitability for AnimatorFX. Use *Refresh* after entering a new key. On Linux, a working Secret Service or GNOME Keyring is
 required; AnimatorFX does not fall back to storing keys in plain text. Leave a key field blank to
 keep its existing key, or select its removal checkbox.
 
 Choose *File ▸ Generate with AI…* and describe the animation. The dialog shows the selected
 provider and model; your description is sent to that provider and may incur charges. The result is
-validated and opens as a new, unsaved
-document containing editable vector layers and keyframes; it does not generate image, audio or
-video assets. Cancelling or failing a request leaves your existing documents unchanged.
+validated and opens as a new, unsaved document containing editable layers and keyframes.
+Use *Add Files…* or drop artwork onto the dialog's *Attachments* area to provide raster images
+or SVGs. Referenced raster files become embedded image assets; referenced SVGs become editable
+vector layers. Unused attachments are not embedded. The AI does not generate new image, audio
+or video files. Cancelling or failing a request leaves your existing documents unchanged.
+Without a configured provider key and model, generation offers a shortcut to AI Preferences.
 
 When the selected provider has a saved key and model, the side panel offers an *AI Console*.
 Use its *Chat* tab to describe additions or changes to the current project. It can add vector and
 text layers and groups, edit supported properties and text, and add or update keyframes. Changes
 are validated and applied as one undoable edit; a response is discarded if the project changes
 while the request is in progress. Locked layers and groups are not modified.
+
+#### Attach artwork to a chat message
+
+In *Chat*, choose *Project image…* to attach an existing image asset, or use *Add Files…* or
+drop files onto the attachment tray for external artwork. Project images are never attached
+automatically. Preview chips show what will be sent; remove a chip before sending to exclude it.
+
+Each message supports up to five attachments in total. External files must be PNG, JPEG, GIF or
+SVG and no larger than 5 MB each; provider previews are PNGs bounded to 200 KB. Invalid or
+oversized attachments show an inline error. Project choices follow changes and undo/redo in
+the active document; unavailable project attachments must be removed or restored before sending.
+
+Describe the intended use, for example “place this logo beside the title” or “use this photo's
+palette.” The AI can inspect an attachment as a reference or place it. Selected project images,
+including project SVG image assets, reuse their existing asset IDs; external rasters are embedded
+only when referenced, and external SVGs expand into editable vectors. New assets and layers form
+one undoable edit. Repeated uses of an external raster share one embedded asset.
+
+Attachments belong only to the message that sends them. Sending clears the tray, switching
+documents clears drafts, and follow-ups require reattachment. The transcript retains names only,
+not attachment bytes.
+
+#### Review and refine edits
 
 After an AI edit, expand the affected layers in Chat to adjust supported values directly, including
 drop-shadow color, radius, offsets and spread. Adjustments apply immediately as separate undoable
@@ -525,8 +562,10 @@ There are at most four provider calls per interaction. If visual review fails, i
 project contains video layers, the validated candidate is retained and the Activity tab reports the skip.
 
 The project structure (including layer names and text), selection, playhead and recent conversation
-are sent to the selected provider and may incur charges. Embedded media and local asset paths are
-not sent. Conversations are kept in memory per open document and can be cleared in *Chat*.
+are sent to the selected provider and may incur charges. Only explicitly attached visuals are sent
+as previews, with their names and request-local IDs; original media bytes, local asset paths and
+unselected project asset data are not sent. Optional visual-review frames can reveal rendered
+embedded content. Conversations are kept in memory per open document and can be cleared in *Chat*.
 The separate *Activity* tab shows session activity and sanitized error details; prompts, project
 content and API keys are not intentionally recorded there.
 
