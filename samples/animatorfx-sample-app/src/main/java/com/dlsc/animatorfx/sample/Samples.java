@@ -19,6 +19,9 @@ public final class Samples {
     /** A single slot that wiggles, used for the in-place demonstration. */
     public static final String ATTENTION = "attention";
 
+    /** The animation used by the live-element interaction demonstration. */
+    public static final String LIVE_ELEMENTS = "live-elements";
+
     private Samples() {
     }
 

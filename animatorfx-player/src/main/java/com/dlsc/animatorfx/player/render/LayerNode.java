@@ -52,6 +52,9 @@ abstract class LayerNode {
     private final EffectChain effects = new EffectChain();
     private Layer layer;
     private LayerState last;
+    String textOverride;
+    javafx.scene.paint.Paint fillOverride;
+    private Boolean visibleOverride;
 
     LayerNode(String id, Node node, boolean geometryOnly, boolean clip) {
         this.id = id;
@@ -76,8 +79,23 @@ abstract class LayerNode {
      * Takes over the layer's static values. The next frame is written in full.
      */
     final void setLayer(Layer layer, Assets assets, boolean force) {
+        force |= textOverride != null || fillOverride != null || visibleOverride != null;
+        textOverride = null;
+        fillOverride = null;
+        visibleOverride = null;
         if (force || layer != this.layer) {
             this.layer = layer;
+            last = null;
+            writeStatics(layer, assets);
+        }
+    }
+
+    final void setOverrides(String text, javafx.scene.paint.Paint fill, Boolean visible, Assets assets) {
+        if (!Objects.equals(textOverride, text) || !Objects.equals(fillOverride, fill)
+                || !Objects.equals(visibleOverride, visible)) {
+            textOverride = text;
+            fillOverride = fill;
+            visibleOverride = visible;
             last = null;
             writeStatics(layer, assets);
         }
@@ -100,7 +118,7 @@ abstract class LayerNode {
         last = state;
         if (!clip) {
             if (old == null || old.visible() != state.visible()) {
-                node.setVisible(state.visible() && rendered());
+                node.setVisible((visibleOverride == null ? state.visible() : visibleOverride) && rendered());
             }
             if (old == null || !Arrays.equals(old.matrix(), state.matrix())) {
                 double[] m = state.matrix();
@@ -292,7 +310,7 @@ abstract class LayerNode {
                 return;
             }
             if (old == null || changed(old.fill(), state.fill())) {
-                outline.setFill(PaintConverter.toFx(state.fill()));
+                outline.setFill(fillOverride == null ? PaintConverter.toFx(state.fill()) : fillOverride);
             }
 
             boolean splitNow = trimmed != null && state.strokePath() != fillPath;
@@ -332,7 +350,7 @@ abstract class LayerNode {
         @Override
         void writeStatics(Layer layer, Assets assets) {
             TextLayer source = (TextLayer) layer;
-            text.setText(source.text());
+            text.setText(textOverride == null ? source.text() : textOverride);
             alignment = source.alignment();
             // lines against each other; where the text is against the origin is set with the font
             text.setTextAlignment(TextAlignment.valueOf(alignment.name()));
@@ -358,7 +376,7 @@ abstract class LayerNode {
             }
             Paint fill = state.fill();
             if (old == null || changed(old.fill(), fill)) {
-                text.setFill(PaintConverter.toFx(fill));
+                text.setFill(fillOverride == null ? PaintConverter.toFx(fill) : fillOverride);
             }
             writeStroke(text, old, state);
         }

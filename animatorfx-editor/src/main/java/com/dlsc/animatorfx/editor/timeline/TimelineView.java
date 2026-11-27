@@ -13,7 +13,10 @@ import com.dlsc.animatorfx.editor.doc.ViewState;
 import com.dlsc.animatorfx.editor.ui.Palette;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Asset;
+import com.dlsc.animatorfx.model.GroupLayer;
+import com.dlsc.animatorfx.model.Layers;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,10 +25,14 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import javafx.beans.InvalidationListener;
 import javafx.beans.WeakInvalidationListener;
+import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
+import javafx.collections.ListChangeListener;
+import javafx.event.EventDispatcher;
 import javafx.geometry.Orientation;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
@@ -71,8 +78,10 @@ public final class TimelineView extends Region {
 
     private final ObjectProperty<EditorDocument> document = new SimpleObjectProperty<>(this, "document");
     private final StringProperty selectedMarker = new SimpleStringProperty(this, "selectedMarker");
+    private final BooleanProperty followSelection = new SimpleBooleanProperty(this, "followSelection", true);
     private final Palette palette = new Palette();
     private final KeyframeActions keyframeActions = new KeyframeActions(this);
+    private final ObjectProperty<Runnable> onClose = new SimpleObjectProperty<>(this, "onClose");
     private final LayerTreeColumn column = new LayerTreeColumn(this);
     private final TimeRuler ruler = new TimeRuler(this);
     private final MarkerLane markerLane = new MarkerLane(this);
@@ -91,13 +100,26 @@ public final class TimelineView extends Region {
     private List<TimelineRow> rows = List.of();
     private boolean rowsDirty = true;
     private boolean syncingScroll;
+    private String revealLayerId;
+    private final Set<String> highlighted = new HashSet<>();
+    private int dispatching;
 
     private final InvalidationListener structure = obs -> invalidateRows();
     private final InvalidationListener redraw = obs -> requestLayout();
     private final InvalidationListener playhead = obs -> playheadMoved();
     private final InvalidationListener layerSelection = obs -> {
         pruneKeyframeSelection();
+        if (isFollowSelection() || dispatching > 0) {
+            syncHighlight();
+        }
         requestLayout();
+    };
+    private final ListChangeListener<String> layerSelected = change -> {
+        while (change.next()) {
+            if (change.wasAdded()) {
+                revealLayerId = change.getAddedSubList().getLast();
+            }
+        }
     };
 
     private Consumer<String> notifier = message -> {
@@ -144,6 +166,26 @@ public final class TimelineView extends Region {
             }
         });
         selectedMarker.addListener(redraw);
+        followSelection.addListener((obs, was, follow) -> {
+            if (follow) {
+                syncHighlight();
+                EditorDocument doc = getDocument();
+                if (doc != null && !doc.getSelection().layerIds().isEmpty()) {
+                    revealLayerId = doc.getSelection().layerIds().getLast();
+                }
+                requestLayout();
+            }
+        });
+        // tells selection changes made in the timeline from those made elsewhere
+        EventDispatcher dispatcher = getEventDispatcher();
+        setEventDispatcher((event, tail) -> {
+            dispatching++;
+            try {
+                return dispatcher.dispatchEvent(event, tail);
+            } finally {
+                dispatching--;
+            }
+        });
         document.addListener((obs, oldDoc, newDoc) -> documentChanged(oldDoc, newDoc));
         addEventHandler(ScrollEvent.SCROLL, this::scrolled);
         addEventHandler(ZoomEvent.ZOOM, e -> {
@@ -173,6 +215,23 @@ public final class TimelineView extends Region {
     }
 
     /**
+     * What the close button of the timeline does, usually hiding the timeline.
+     *
+     * @return the on-close property
+     */
+    public final ObjectProperty<Runnable> onCloseProperty() {
+        return onClose;
+    }
+
+    public final Runnable getOnClose() {
+        return onClose.get();
+    }
+
+    public final void setOnClose(Runnable value) {
+        onClose.set(value);
+    }
+
+    /**
      * The name of the marker that is selected in the marker lane, or {@code null}. The selection
      * belongs to the timeline, not to the document.
      *
@@ -188,6 +247,27 @@ public final class TimelineView extends Region {
 
     public final void setSelectedMarker(String value) {
         selectedMarker.set(value);
+    }
+
+    /**
+     * Whether the timeline follows the layers that get selected elsewhere, for example on the
+     * canvas: their rows are shown as selected and scrolled into view. A layer inside a collapsed
+     * group shows the row of the nearest listed group instead; groups are not expanded. When off,
+     * only clicks in the timeline change which rows are shown as selected. An application-wide
+     * setting, on by default.
+     *
+     * @return the follow-selection property
+     */
+    public final BooleanProperty followSelectionProperty() {
+        return followSelection;
+    }
+
+    public final boolean isFollowSelection() {
+        return followSelection.get();
+    }
+
+    public final void setFollowSelection(boolean value) {
+        followSelection.set(value);
     }
 
     // ------------------------------------------------------------------ parts and state
@@ -242,6 +322,22 @@ public final class TimelineView extends Region {
         ViewState view = doc.getViewState();
         return TimeScale.of(view.getTimelineZoom(), view.getTimelineScroll(), trackWidth, animation.duration(),
                 animation.frameRate());
+    }
+
+    /**
+     * Whether the row of the layer is shown as selected. That is the selection of the document,
+     * except with follow selection switched off, when only clicks in the timeline change it.
+     */
+    boolean isHighlighted(String layerId) {
+        return highlighted.contains(layerId);
+    }
+
+    private void syncHighlight() {
+        highlighted.clear();
+        EditorDocument doc = getDocument();
+        if (doc != null) {
+            highlighted.addAll(doc.getSelection().layerIds());
+        }
     }
 
     /** How far the rows are scrolled up, in pixels. */
@@ -506,6 +602,7 @@ public final class TimelineView extends Region {
         if (oldDoc != null) {
             oldDoc.animationProperty().removeListener(structure);
             oldDoc.getSelection().layerIds().removeListener(layerSelection);
+            oldDoc.getSelection().layerIds().removeListener(layerSelected);
             oldDoc.getSelection().keyframes().removeListener(redraw);
             oldDoc.getSelection().cueIds().removeListener(redraw);
             oldDoc.playheadProperty().removeListener(playhead);
@@ -518,6 +615,7 @@ public final class TimelineView extends Region {
         if (newDoc != null) {
             newDoc.animationProperty().addListener(structure);
             newDoc.getSelection().layerIds().addListener(layerSelection);
+            newDoc.getSelection().layerIds().addListener(layerSelected);
             newDoc.getSelection().keyframes().addListener(redraw);
             newDoc.getSelection().cueIds().addListener(redraw);
             newDoc.playheadProperty().addListener(playhead);
@@ -529,6 +627,8 @@ public final class TimelineView extends Region {
         }
         setSelectedMarker(null);
         lastCueAsset = null;
+        revealLayerId = null;
+        syncHighlight();
         scrollY = 0;
         column.documentChanged(oldDoc, newDoc);
         invalidateRows();
@@ -607,6 +707,10 @@ public final class TimelineView extends Region {
                 : TimeScale.maxScroll(zoom, trackWidth, animation.duration(), animation.frameRate());
         boolean horizontal = maxScroll > 1e-9;
         double trackHeight = Math.max(0, height - HEADER_HEIGHT - (horizontal ? barSize : 0));
+        if (revealLayerId != null && doc != null && isFollowSelection()) {
+            reveal(current, revealLayerId, trackHeight);
+        }
+        revealLayerId = null;
         scrollY = Math.clamp(scrollY, 0, Math.max(0, contentHeight - trackHeight));
         TimeScale scale = getScale();
 
@@ -645,6 +749,29 @@ public final class TimelineView extends Region {
         cueLane.draw();
         tracks.draw();
         positionPlayhead();
+    }
+
+    /**
+     * Scrolls the least distance that shows the row of the layer, or of the nearest listed group
+     * around it when it is inside a collapsed group.
+     */
+    private void reveal(List<TimelineRow> current, String layerId, double trackHeight) {
+        Animation animation = getDocument().getAnimation();
+        String id = layerId;
+        while (id != null) {
+            for (int i = 0; i < current.size(); i++) {
+                if (current.get(i) instanceof TimelineRow.LayerRow row && row.layerId().equals(id)) {
+                    double top = i * ROW_HEIGHT;
+                    if (top < scrollY) {
+                        scrollY = top;
+                    } else if (top + ROW_HEIGHT > scrollY + trackHeight) {
+                        scrollY = top + ROW_HEIGHT - trackHeight;
+                    }
+                    return;
+                }
+            }
+            id = Layers.parentOf(animation, id).map(GroupLayer::id).orElse(null);
+        }
     }
 
     private void positionPlayhead() {

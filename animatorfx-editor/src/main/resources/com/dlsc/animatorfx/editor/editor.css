@@ -32,6 +32,10 @@
     -afx-audio-soft: rgba(53, 201, 165, 0.14);
     -afx-audio-bar: rgba(53, 201, 165, 0.22);
     -afx-wave: #7fe6cd;
+    -afx-danger: #da3633;
+    -afx-warning: #d29922;
+    -afx-on-warning: #1d2733;
+    -afx-success: #238636;
 
     /* AtlantaFX follows the editor palette */
     -color-bg-default: -afx-panel;
@@ -77,10 +81,326 @@
     -afx-audio-soft: rgba(15, 157, 132, 0.12);
     -afx-audio-bar: rgba(15, 157, 132, 0.20);
     -afx-wave: #0b8571;
+    -afx-danger: #cf222e;
+    -afx-warning: #d4a72c;
+    -afx-success: #1a7f37;
 }
 
 .main-window {
     -fx-background-color: -afx-bg;
+}
+
+.info-center-view {
+    -fx-control-inner-background: -afx-panel;
+    -fx-control-inner-background-alt: -afx-panel-alt;
+    -fx-text-background-color: -afx-fg;
+    -fx-box-border: -afx-line;
+    -fx-accent: -afx-accent;
+}
+
+/* the type colours the whole card; its labels switch to the matching foreground */
+.info-center-view .notification-view > .content {
+    -afx-notification-fg: -afx-on-accent;
+}
+
+.info-center-view .notification-view.info > .content {
+    -fx-background-color: -afx-accent;
+}
+
+.info-center-view .notification-view.warning > .content {
+    -fx-background-color: -afx-warning;
+    -afx-notification-fg: -afx-on-warning;
+}
+
+.info-center-view .notification-view.danger > .content {
+    -fx-background-color: -afx-danger;
+}
+
+.info-center-view .notification-view.success > .content {
+    -fx-background-color: -afx-success;
+}
+
+.info-center-view .notification-view > .content > .text-container > .title-time-box > .title-label,
+.info-center-view .notification-view > .content > .text-container > .title-time-box > .upper-right-pane > .time-label,
+.info-center-view .notification-view > .content > .text-container > .description-label {
+    -fx-text-fill: -afx-notification-fg;
+}
+
+.info-center-view .notification-view > .content .default-icon {
+    -fx-icon-color: -afx-notification-fg;
+}
+
+.ai-generation-notification {
+    -fx-padding: 6 0 0 0;
+}
+
+.ai-history {
+    -fx-background-color: -afx-panel;
+    -fx-pref-width: 440px;
+}
+
+.popover {
+    -fx-control-inner-background: -afx-panel;
+    -fx-color: -afx-line;
+}
+
+.ai-history-title {
+    -fx-text-fill: -afx-fg;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.ai-history-card {
+    -fx-background-color: -afx-panel-alt;
+    -fx-background-radius: 8px;
+    -fx-border-color: -afx-line;
+    -fx-border-radius: 8px;
+    -fx-padding: 12px;
+}
+
+.ai-history-job-title {
+    -fx-text-fill: -afx-fg;
+    -fx-font-weight: bold;
+}
+
+.ai-history-request {
+    -fx-text-fill: -afx-fg;
+}
+
+.ai-history-details,
+.ai-history-empty {
+    -fx-text-fill: -afx-muted;
+    -fx-font-size: 11px;
+}
+
+.ai-history-preview {
+    -fx-background-color: -afx-panel;
+    -fx-background-radius: 4px;
+    -fx-border-color: -afx-line;
+    -fx-border-radius: 4px;
+}
+
+#ai-chat-conversation,
+#ai-chat-conversation > .viewport {
+    -fx-background-color: -afx-panel;
+}
+
+.ai-chat-message {
+    -fx-padding: 8px 10px;
+    -fx-background-radius: 8px;
+    -fx-text-fill: -afx-fg;
+}
+
+.ai-chat-message.user {
+    -fx-background-color: -afx-accent;
+    -fx-text-fill: white;
+}
+
+.ai-chat-message.assistant {
+    -fx-background-color: -afx-panel-alt;
+    -fx-border-color: -afx-line;
+    -fx-border-radius: 8px;
+}
+
+.ai-chat-typing {
+    -fx-padding: 12px 12px 10px 12px;
+}
+
+.ai-chat-typing-dot {
+    -fx-min-width: 7px;
+    -fx-min-height: 7px;
+    -fx-pref-width: 7px;
+    -fx-pref-height: 7px;
+    -fx-max-width: 7px;
+    -fx-max-height: 7px;
+    -fx-background-radius: 4px;
+    -fx-background-color: -afx-muted;
+}
+
+.ai-chat-placeholder {
+    -fx-text-fill: -afx-muted;
+}
+
+.ai-chat-context {
+    -fx-background-color: -afx-line, -afx-panel-alt;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 6px, 5px;
+    -fx-padding: 8px 10px;
+}
+
+.ai-attachments {
+    -fx-background-color: -afx-line, -afx-panel-alt;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 6px, 5px;
+    -fx-padding: 10px;
+}
+
+.ai-attachments-title {
+    -fx-font-weight: bold;
+}
+
+.ai-attachments-hint {
+    -fx-text-fill: -afx-muted;
+    -fx-font-size: 11px;
+}
+
+.ai-attachment-chip {
+    -fx-background-color: -afx-line, -afx-bg;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 6px, 5px;
+    -fx-padding: 4px 4px 4px 6px;
+}
+
+.ai-attachment-name {
+    -fx-font-size: 12px;
+}
+
+.ai-attachment-size {
+    -fx-text-fill: -afx-muted;
+    -fx-font-size: 10px;
+}
+
+.ai-attachment-remove {
+    -fx-background-color: transparent;
+    -fx-padding: 2px;
+    -fx-cursor: hand;
+}
+
+.ai-attachment-remove .ikonli-font-icon {
+    -fx-icon-size: 14;
+    -fx-icon-color: -afx-muted;
+}
+
+.ai-attachment-remove:hover .ikonli-font-icon {
+    -fx-icon-color: -afx-fg;
+}
+
+.ai-attachment-error {
+    -fx-text-fill: -afx-danger;
+    -fx-font-size: 11px;
+}
+
+.ai-chat-attachments {
+    -fx-padding: 6px 8px;
+    -fx-background-radius: 5px, 4px;
+}
+
+.ai-chat-attachments .ai-chat-project-images {
+    -fx-pref-width: 155px;
+}
+
+.ai-chat-attachments .ai-attachment-chip {
+    -fx-padding: 3px 3px 3px 5px;
+}
+
+.ai-chat-provider {
+    -fx-font-weight: bold;
+    -fx-graphic-text-gap: 6px;
+}
+
+.ai-chat-provider .ikonli-font-icon {
+    -fx-icon-color: -afx-accent;
+}
+
+.ai-chat-model {
+    -fx-background-color: -afx-bg;
+    -fx-background-radius: 9px;
+    -fx-border-color: -afx-line;
+    -fx-border-radius: 9px;
+    -fx-padding: 1px 8px;
+    -fx-font-size: 11px;
+    -fx-text-fill: -afx-muted;
+}
+
+.ai-chat-project {
+    -fx-graphic-text-gap: 6px;
+}
+
+.ai-chat-project .ikonli-font-icon,
+.ai-chat-disclosure .ikonli-font-icon {
+    -fx-icon-size: 14;
+    -fx-icon-color: -afx-muted;
+}
+
+.ai-chat-context-divider {
+    -fx-min-height: 1px;
+    -fx-pref-height: 1px;
+    -fx-max-height: 1px;
+    -fx-background-color: -afx-line;
+}
+
+.ai-chat-disclosure {
+    -fx-font-size: 11px;
+    -fx-text-fill: -afx-muted;
+    -fx-graphic-text-gap: 6px;
+}
+
+/* option A: an AI reply and its adjustment controls share one box */
+.ai-chat-reply {
+    -fx-background-color: -afx-line, -afx-bg;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 8px, 7px;
+}
+
+.ai-chat-message.assistant.attached {
+    -fx-background-color: -afx-panel-alt;
+    -fx-background-insets: 1 1 0 1;
+    -fx-background-radius: 7px 7px 0 0;
+    -fx-border-color: transparent;
+}
+
+.ai-feedback {
+    -fx-padding: 8px 10px 10px 10px;
+    -fx-border-color: -afx-accent transparent transparent transparent;
+    -fx-border-width: 2px 0 0 0;
+}
+
+.ai-feedback-title {
+    -fx-text-fill: -afx-accent;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.ai-feedback-title .ikonli-font-icon {
+    -fx-icon-color: -afx-accent;
+}
+
+.ai-feedback-badge {
+    -fx-background-color: derive(-afx-accent, -40%);
+    -fx-background-radius: 9px;
+    -fx-padding: 0 7px;
+    -fx-text-fill: -afx-on-accent;
+    -fx-font-size: 10px;
+}
+
+.light .ai-feedback-badge {
+    -fx-background-color: derive(-afx-accent, 70%);
+    -fx-text-fill: -afx-accent;
+}
+
+.ai-feedback .titled-pane,
+.ai-feedback .titled-pane > .title {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.ai-feedback .titled-pane > .title {
+    -fx-padding: 4px 0;
+}
+
+.ai-feedback .titled-pane > .title > .text {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.ai-feedback .titled-pane > .content {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 4px 0 4px 16px;
+}
+
+#ai-generations:running .ikonli-font-icon {
+    -fx-icon-color: -afx-accent;
 }
 
 /* Canvas drawing code reads the palette from here (ui.Palette). */
@@ -111,6 +431,11 @@
 .ikonli-font-icon {
     -fx-icon-size: 16;
     -fx-icon-color: -afx-fg;
+}
+
+/* icons on accent buttons follow the button's label, not the panel foreground */
+.button.accent .ikonli-font-icon {
+    -fx-icon-color: -afx-on-accent;
 }
 
 .tooltip {
@@ -657,13 +982,22 @@
     -fx-padding: 0 0 0 4;
 }
 
+.side-panel > .panel-close .ikonli-font-icon {
+    -fx-icon-size: 14;
+    -fx-icon-color: -afx-muted;
+}
+
+.side-panel > .panel-close:hover .ikonli-font-icon {
+    -fx-icon-color: -afx-fg;
+}
+
 .side-panel .tab-pane > .tab-header-area > .tab-header-background {
     -fx-background-color: -afx-line, -afx-panel;
     -fx-background-insets: 0, 0 0 1 0;
 }
 
 .side-panel .tab-pane > .tab-header-area > .headers-region > .tab {
-    -fx-padding: 7 7 7 7;
+    -fx-padding: 7 6 7 6;
 }
 
 /* Three fixed tabs need no overflow menu; its button would take the room of the last title in a narrow panel. */
@@ -673,6 +1007,12 @@
 .side-panel .tab-pane > .tab-header-area > .control-buttons-tab > .container > .tab-down-button > .arrow {
     -fx-padding: 0;
     -fx-opacity: 0;
+}
+
+/* The skin sizes, scrolls and clips the tabs around the control buttons only (plus a 10px spacer),
+   so their invisible width keeps the tabs clear of the panel's close button. */
+.side-panel .tab-pane > .tab-header-area > .control-buttons-tab {
+    -fx-pref-width: 16px;
 }
 
 .side-panel .tab-pane > .tab-header-area > .headers-region > .tab .tab-label {

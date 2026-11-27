@@ -81,6 +81,32 @@ class SampleFilesTest {
     }
 
     @Test
+    void loginSceneHasAStaggeredEntranceAndAnAmbientLoop() throws IOException {
+        if (Boolean.getBoolean("animatorfx.login.write")) {
+            AnimationIO.write(LoginSceneGenerator.create(), DIRECTORY.resolve("login.afx"));
+        }
+        assertTrue(Files.exists(DIRECTORY.resolve("login.afx")), "login sample is missing");
+        Animation animation = committed("login");
+        assertEquals(LoginSceneGenerator.create().animation(), animation);
+        if (!Boolean.getBoolean("animatorfx.login.write")) {
+            assertEquals(animation, Samples.load("login").animation());
+        }
+        assertEquals(1200, animation.width());
+        assertEquals(800, animation.height());
+        assertEquals(List.of("intro", "ambient"), animation.markers().stream().map(Marker::name).toList());
+        assertEquals(List.of("login-form"), Layers.slots(animation).stream().map(SlotLayer::slotName).toList());
+        Frame start = Evaluator.sample(animation, 0);
+        Frame entered = Evaluator.sample(animation, 4);
+        assertTrue(start.get("login-form").opacity() < entered.get("login-form").opacity());
+        assertTrue(start.get("login-left-card").position().x() < entered.get("login-left-card").position().x());
+        assertTrue(start.get("login-right-card").position().x() > entered.get("login-right-card").position().x());
+        assertNotEquals(Evaluator.sample(animation, 4).get("login-orb").position(),
+                Evaluator.sample(animation, 8).get("login-orb").position());
+        assertEquals(Evaluator.sample(animation, 4).get("login-orb").position(),
+                Evaluator.sample(animation, 12).get("login-orb").position());
+    }
+
+    @Test
     void winterTownIsAnEditableLoopWithMovingSceneElements() throws IOException {
         if (Boolean.getBoolean("animatorfx.winter.write")) {
             WinterTownGenerator.write(DIRECTORY.resolve("winter-town.afx"));
@@ -156,10 +182,12 @@ class SampleFilesTest {
     }
 
     @Test
-    void theBrowserShowsEverySampleButTheInPlaceOne() {
+    void theBrowserShowsTheShowcasesButNotTheDedicatedDemos() {
         Set<String> all = SampleGenerator.all().keySet();
-        assertEquals(all.stream().filter(name -> !name.equals(Samples.ATTENTION)).toList(), Samples.SHOWCASE);
+        assertEquals(all.stream().filter(name -> !name.equals(Samples.ATTENTION)
+                && !name.equals(Samples.LIVE_ELEMENTS)).toList(), Samples.SHOWCASE);
         assertTrue(all.contains(Samples.ATTENTION));
+        assertTrue(all.contains(Samples.LIVE_ELEMENTS));
     }
 
     @ParameterizedTest

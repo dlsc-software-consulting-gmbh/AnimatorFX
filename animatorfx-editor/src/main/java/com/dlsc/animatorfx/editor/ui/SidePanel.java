@@ -6,12 +6,18 @@ import com.dlsc.animatorfx.editor.inspector.DocumentView;
 import com.dlsc.animatorfx.editor.inspector.InspectorView;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.Button;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.StackPane;
+import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.material2.Material2AL;
 
 /**
  * The tabbed panel at the right: Inspector ({@link InspectorView}), Assets ({@link AssetsView})
@@ -22,20 +28,35 @@ public final class SidePanel extends StackPane {
     public static final String INSPECTOR = "inspector";
     public static final String ASSETS = "assets";
     public static final String DOCUMENT = "document";
+    static final String AI_CONSOLE = "ai-console";
 
     private final ObjectProperty<EditorDocument> document = new SimpleObjectProperty<>(this, "document");
+    private final ObjectProperty<Runnable> onClose = new SimpleObjectProperty<>(this, "onClose");
     private final TabPane tabs = new TabPane();
     private final InspectorView inspector = new InspectorView();
     private final AssetsView assets = new AssetsView();
     private final DocumentView documentView = new DocumentView();
+    private Tab aiConsoleTab;
+    private boolean selectAiConsoleWhenAvailable;
 
     public SidePanel() {
         getStyleClass().add("side-panel");
         setMinWidth(0);
+        tabs.setId("side-panel-tabs");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabs.getTabs().addAll(tab(INSPECTOR, "Inspector", inspector), tab(ASSETS, "Assets", assets),
                 tab(DOCUMENT, "Document", documentView));
-        getChildren().add(tabs);
+        tabs.getSelectionModel().selectedItemProperty().addListener((obs, oldTab, newTab) ->
+                selectAiConsoleWhenAvailable = false);
+        Button close = new Button(null, new FontIcon(Material2AL.CLOSE));
+        close.setId("side-panel-close");
+        close.getStyleClass().addAll("icon-button", "panel-close");
+        close.setFocusTraversable(false);
+        close.setTooltip(new Tooltip("Hide Side Panel"));
+        close.setOnAction(event -> { if (getOnClose() != null) getOnClose().run(); });
+        StackPane.setAlignment(close, Pos.TOP_RIGHT);
+        StackPane.setMargin(close, new Insets(8, 4, 0, 0));
+        getChildren().addAll(tabs, close);
         // Delete and Backspace that a control of the panel did not use must not reach the canvas,
         // where they would delete the selected layers
         addEventHandler(KeyEvent.KEY_PRESSED, event -> {
@@ -65,6 +86,23 @@ public final class SidePanel extends StackPane {
         document.set(value);
     }
 
+    /**
+     * What the close button of the panel does, usually hiding the panel.
+     *
+     * @return the on-close property
+     */
+    public final ObjectProperty<Runnable> onCloseProperty() {
+        return onClose;
+    }
+
+    public final Runnable getOnClose() {
+        return onClose.get();
+    }
+
+    public final void setOnClose(Runnable value) {
+        onClose.set(value);
+    }
+
     public InspectorView getInspector() {
         return inspector;
     }
@@ -88,8 +126,9 @@ public final class SidePanel extends StackPane {
      * Selects the tab with that id; an unknown id leaves the selection as it is.
      */
     public void setActiveTab(String tabId) {
-        tabs.getTabs().stream().filter(t -> t.getId().equals(tabId)).findFirst()
-                .ifPresent(tabs.getSelectionModel()::select);
+        Tab match = tabs.getTabs().stream().filter(t -> t.getId().equals(tabId)).findFirst().orElse(null);
+        selectAiConsoleWhenAvailable = match == null && AI_CONSOLE.equals(tabId);
+        if (match != null) tabs.getSelectionModel().select(match);
     }
 
     /**
@@ -108,6 +147,19 @@ public final class SidePanel extends StackPane {
      */
     public TabPane getTabPane() {
         return tabs;
+    }
+
+    void setAiConsoleAvailable(Node content, boolean available) {
+        if (available) {
+            if (aiConsoleTab == null) aiConsoleTab = tab(AI_CONSOLE, "AI Console", content);
+            if (!tabs.getTabs().contains(aiConsoleTab)) tabs.getTabs().add(aiConsoleTab);
+            if (selectAiConsoleWhenAvailable) {
+                selectAiConsoleWhenAvailable = false;
+                tabs.getSelectionModel().select(aiConsoleTab);
+            }
+        } else if (aiConsoleTab != null) {
+            tabs.getTabs().remove(aiConsoleTab);
+        }
     }
 
     private static Tab tab(String id, String title, Node content) {

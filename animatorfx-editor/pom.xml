@@ -23,7 +23,7 @@
         <!-- animatorfx.audio=off: no test makes sound; tests that look at sound install a recording output. -->
         <!-- TestFX brings OSGi onto the test class path; Ikonli then tries its OSGi resolver and needs to read it. -->
         <!-- JavaFX's bundled Headless backend supports the JavaFX 27 window APIs; Monocle 21 does not. -->
-        <surefire.jvm.args>-Dglass.platform=Headless -Dtestfx.robot=glass -Dprism.order=sw -Djava.awt.headless=true --enable-native-access=javafx.graphics,javafx.media --add-exports javafx.graphics/com.sun.glass.ui=ALL-UNNAMED --add-exports javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-opens javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-reads org.kordamp.ikonli.core=ALL-UNNAMED -Danimatorfx.audio=off</surefire.jvm.args>
+        <surefire.jvm.args>-Dglass.platform=Headless -Dtestfx.robot=glass -Dprism.order=sw -Djava.awt.headless=true --enable-native-access=javafx.graphics,javafx.media,com.sun.jna --add-exports javafx.graphics/com.sun.glass.ui=ALL-UNNAMED --add-exports javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-opens javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-reads org.kordamp.ikonli.core=ALL-UNNAMED -Danimatorfx.audio=off</surefire.jvm.args>
     </properties>
 
     <!-- Pins every (also transitive) JavaFX artifact to the editor JavaFX version. -->
@@ -99,6 +99,10 @@
             <artifactId>ikonli-material2-pack</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.kordamp.ikonli</groupId>
+            <artifactId>ikonli-bootstrapicons-pack</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.dlsc.gemsfx</groupId>
             <artifactId>gemsfx</artifactId>
             <exclusions>
@@ -108,6 +112,58 @@
                     <artifactId>controlsfx</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft</groupId>
+            <artifactId>credential-secure-storage</artifactId>
+            <version>1.0.3</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.java.dev.jna</groupId>
+                    <artifactId>jna-platform</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>1.24.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>dev.langchain4j</groupId>
+                    <artifactId>langchain4j-http-client-jdk</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-anthropic</artifactId>
+            <version>1.24.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>dev.langchain4j</groupId>
+                    <artifactId>langchain4j-http-client-jdk</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna-platform-jpms</artifactId>
+            <version>5.15.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.17</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>2.0.17</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -147,7 +203,7 @@
                     <options>
                         <!-- empty = the per-user configuration directory -->
                         <option>-Danimatorfx.configDir=${animatorfx.configDir}</option>
-                        <option>--enable-native-access=javafx.graphics,javafx.media</option>
+                        <option>--enable-native-access=javafx.graphics,javafx.media,com.sun.jna</option>
                     </options>
                     <commandlineArgs>${animatorfx.args}</commandlineArgs>
                 </configuration>
@@ -159,15 +215,11 @@
       Native packaging: mvn -Ppackage -pl animatorfx-editor -am package
       (add -DskipTests when the tests have already run). Needs the jlink and jpackage tools of the JDK that runs Maven.
 
-      1. antrun (prepare-package) empties target/package/modules; copy-dependencies: the editor's runtime
-         dependencies go there. All of them are explicit
-         JPMS modules (AnimatorFX, AtlantaFX, Ikonli, GemsFX with ValidatorFX, PickerFX and JSVG, and the
-         platform JavaFX jars). ControlsFX, a Maven dependency of PickerFX that no module descriptor
-         requires, is excluded.
-      2. antrun: adds the editor jar and removes the empty, classifier-less JavaFX jars, which would otherwise be
-         automatic modules that clash with the real ones.
-      3. jlink: links a trimmed Java runtime containing the editor and everything it requires -> target/package/runtime.
-      4. jpackage: wraps that runtime into an application image for the current platform -> target/dist
+      1. Copy runtime dependencies and the editor jar to target/package/app/lib.
+      2. Move the platform JavaFX modules to target/package/javafx and create a class-path launcher.
+      3. jlink: link JavaFX and JDK modules -> target/package/runtime. LangChain4j uses automatic
+         modules, which jlink cannot link, so application libraries run on the class path.
+      4. jpackage: wrap the application and runtime into an image for the current platform -> target/dist
          (AnimatorFX.app on macOS, a directory AnimatorFX elsewhere). No installer, no signing.
     -->
     <profiles>
@@ -238,6 +290,7 @@
                                         </manifestclasspath>
                                         <manifest file="${project.build.directory}/jdeploy/MANIFEST.MF">
                                             <attribute name="Class-Path" value="${jdeploy.classpath}"/>
+                                            <attribute name="Enable-Native-Access" value="ALL-UNNAMED"/>
                                         </manifest>
                                     </target>
                                 </configuration>
@@ -332,7 +385,7 @@
                                 </goals>
                                 <configuration>
                                     <includeScope>runtime</includeScope>
-                                    <outputDirectory>${package.work}/modules</outputDirectory>
+                                    <outputDirectory>${package.work}/app/lib</outputDirectory>
                                     <overWriteReleases>true</overWriteReleases>
                                     <overWriteSnapshots>true</overWriteSnapshots>
                                 </configuration>
@@ -344,8 +397,6 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <version>${maven-antrun-plugin.version}</version>
                         <executions>
-                            <!-- before the dependencies are copied: a left-over jar of another version would be a second
-                                 copy of its module, which jlink rejects -->
                             <execution>
                                 <id>package-clean</id>
                                 <phase>prepare-package</phase>
@@ -354,7 +405,8 @@
                                 </goals>
                                 <configuration>
                                     <target>
-                                        <delete dir="${package.work}/modules"/>
+                                        <delete dir="${package.work}/app"/>
+                                        <delete dir="${package.work}/javafx"/>
                                     </target>
                                 </configuration>
                             </execution>
@@ -367,11 +419,27 @@
                                 <configuration>
                                     <target>
                                         <copy file="${project.build.directory}/${project.build.finalName}.jar"
-                                              todir="${package.work}/modules"/>
+                                              todir="${package.work}/app/lib"/>
                                         <delete>
-                                            <fileset dir="${package.work}/modules"
+                                            <fileset dir="${package.work}/app/lib"
                                                      includes="javafx-*-${javafx.editor.version}.jar"/>
                                         </delete>
+                                        <mkdir dir="${package.work}/javafx"/>
+                                        <move todir="${package.work}/javafx">
+                                            <fileset dir="${package.work}/app/lib" includes="javafx-*.jar"/>
+                                        </move>
+                                        <manifestclasspath property="package.classpath"
+                                                           jarfile="${package.work}/app/AnimatorFX-launcher.jar">
+                                            <classpath>
+                                                <fileset dir="${package.work}/app/lib" includes="*.jar"/>
+                                            </classpath>
+                                        </manifestclasspath>
+                                        <jar destfile="${package.work}/app/AnimatorFX-launcher.jar" whenempty="create">
+                                            <manifest>
+                                                <attribute name="Main-Class" value="com.dlsc.animatorfx.editor.Launcher"/>
+                                                <attribute name="Class-Path" value="${package.classpath}"/>
+                                            </manifest>
+                                        </jar>
                                         <!-- jlink and jpackage refuse to write into an existing directory -->
                                         <delete dir="${package.work}/runtime"/>
                                         <delete dir="${package.dist}"/>
@@ -395,9 +463,10 @@
                                     <executable>${java.home}/bin/jlink</executable>
                                     <arguments>
                                         <argument>--module-path</argument>
-                                        <argument>${package.work}/modules</argument>
+                                        <argument>${package.work}/javafx</argument>
                                         <argument>--add-modules</argument>
-                                        <argument>com.dlsc.animatorfx.editor</argument>
+                                        <argument>java.se,jdk.crypto.ec,jdk.unsupported,javafx.controls,javafx.fxml,javafx.media,javafx.swing</argument>
+                                        <argument>--exclude-resources=glob:**/OSGI-INF/**</argument>
                                         <argument>--strip-debug</argument>
                                         <argument>--no-header-files</argument>
                                         <argument>--no-man-pages</argument>
@@ -414,7 +483,7 @@
                                 </goals>
                                 <configuration>
                                     <executable>${java.home}/bin/jpackage</executable>
-                                    <commandlineArgs>--type app-image --name AnimatorFX --app-version ${package.version} --vendor DLSC --runtime-image "${package.work}/runtime" --module com.dlsc.animatorfx.editor/com.dlsc.animatorfx.editor.AnimatorApp --java-options --enable-native-access=javafx.graphics,javafx.media --dest "${package.dist}" ${package.platform.options}</commandlineArgs>
+                                    <commandlineArgs>--type app-image --name AnimatorFX --app-version ${package.version} --vendor DLSC --runtime-image "${package.work}/runtime" --input "${package.work}/app" --main-jar AnimatorFX-launcher.jar --main-class com.dlsc.animatorfx.editor.Launcher --java-options --add-modules=javafx.controls,javafx.fxml,javafx.media,javafx.swing --java-options --enable-native-access=javafx.graphics,javafx.media,ALL-UNNAMED --dest "${package.dist}" ${package.platform.options}</commandlineArgs>
                                 </configuration>
                             </execution>
                         </executions>

@@ -17,9 +17,11 @@ import java.util.Objects;
  * @param activeDocumentId the id of the active document, or {@code null}
  * @param recentFiles      most recent first, at most {@value #MAX_RECENT_FILES}
  * @param audioMuted       whether the sound of the editor is switched off
+ * @param followSelection  whether the timeline scrolls to the layers that get selected
  */
 public record SessionState(WindowState window, Layout layout, String theme, List<DocumentState> documents,
-                           String activeDocumentId, List<Path> recentFiles, boolean audioMuted) {
+                           String activeDocumentId, List<Path> recentFiles, boolean audioMuted,
+                           boolean followSelection) {
 
     public static final int MAX_RECENT_FILES = 20;
 
@@ -76,12 +78,19 @@ public record SessionState(WindowState window, Layout layout, String theme, List
         this(window, layout, theme, documents, activeDocumentId, recentFiles, false);
     }
 
+    /** A state where the timeline follows the selection. */
+    public SessionState(WindowState window, Layout layout, String theme, List<DocumentState> documents,
+                        String activeDocumentId, List<Path> recentFiles, boolean audioMuted) {
+        this(window, layout, theme, documents, activeDocumentId, recentFiles, audioMuted, true);
+    }
+
     public static SessionState defaults() {
-        return new SessionState(null, Layout.DEFAULT, "SYSTEM", List.of(), null, List.of(), false);
+        return new SessionState(null, Layout.DEFAULT, "SYSTEM", List.of(), null, List.of(), false, true);
     }
 
     public SessionState withAudioMuted(boolean muted) {
-        return new SessionState(window, layout, theme, documents, activeDocumentId, recentFiles, muted);
+        return new SessionState(window, layout, theme, documents, activeDocumentId, recentFiles, muted,
+                followSelection);
     }
 
     /**
@@ -89,7 +98,7 @@ public record SessionState(WindowState window, Layout layout, String theme, List
      */
     public SessionState withRecentFile(Path file) {
         return new SessionState(window, layout, theme, documents, activeDocumentId, addRecent(recentFiles, file),
-                audioMuted);
+                audioMuted, followSelection);
     }
 
     /**
@@ -156,6 +165,7 @@ public record SessionState(WindowState window, Layout layout, String theme, List
         out.put("activeDocumentId", activeDocumentId);
         out.put("recentFiles", recentFiles.stream().map(Path::toString).toList());
         out.put("audioMuted", audioMuted);
+        out.put("followSelection", followSelection);
         return out;
     }
 
@@ -205,7 +215,8 @@ public record SessionState(WindowState window, Layout layout, String theme, List
         }
         List<Path> recent = strings(root, "recentFiles").stream().map(Path::of).toList();
         return new SessionState(window, layout, string(root, "theme", defaults.theme()), documents,
-                string(root, "activeDocumentId", null), recent, bool(root, "audioMuted", false));
+                string(root, "activeDocumentId", null), recent, bool(root, "audioMuted", false),
+                bool(root, "followSelection", true));
     }
 
     private static double finite(double value, double fallback) {

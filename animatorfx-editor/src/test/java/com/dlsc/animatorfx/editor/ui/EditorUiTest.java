@@ -113,7 +113,9 @@ public abstract class EditorUiTest {
     public void openWindow() {
         window = fx(() -> {
             MainWindow w = new MainWindow(new Stage(), new SessionStore(dir.resolve("config")),
-                    new RecoveryStore(dir.resolve("config").resolve("recovery")), new NoDialogs());
+                    new RecoveryStore(dir.resolve("config").resolve("recovery")), new NoDialogs(),
+                    provider -> null, (provider, key) -> CompletableFuture.completedFuture(List.of()),
+                    dir.resolve("config").resolve("ai.properties"), (provider, key) -> {}, provider -> {});
             // the headless screen is 1280 x 800
             w.getStage().setWidth(1240);
             w.getStage().setHeight(780);

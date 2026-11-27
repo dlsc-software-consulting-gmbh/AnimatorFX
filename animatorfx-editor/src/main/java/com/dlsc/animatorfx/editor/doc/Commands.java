@@ -89,6 +89,7 @@ public final class Commands {
      * Masks inside the copies point to the copied mask layer when that was duplicated too. A
      * copied slot gets the next free slot name: slot names are unique in a document. Visual
      * copies are offset in their parent's coordinate space; audio layers have no position.
+     * Copies have no application export names.
      */
     public static Command duplicateLayers(Collection<String> ids) {
         Set<String> wanted = new LinkedHashSet<>(ids);
@@ -857,7 +858,8 @@ public final class Commands {
 
     /**
      * Deep copies with fresh layer and keyframe ids, for pasting. Masks point to the copy of
-     * their mask layer when that is among the copies, and are dropped otherwise.
+     * their mask layer when that is among the copies, and are dropped otherwise. Application
+     * export names are cleared.
      */
     public static List<Layer> freshCopies(List<Layer> layers) {
         Map<String, String> newIds = new HashMap<>();
@@ -1055,7 +1057,7 @@ public final class Commands {
                 copy = LayerProperties.set(copy, ref.key(), withFreshKeyframeIds(ref.value()));
             }
         }
-        LayerBase base = copy.base().withId(newIds.get(original.id()));
+        LayerBase base = copy.base().withId(newIds.get(original.id())).withExportName("");
         Mask mask = base.mask();
         if (mask != null && newIds.containsKey(mask.layerId())) {
             base = base.withMask(new Mask(newIds.get(mask.layerId()), mask.mode()));
