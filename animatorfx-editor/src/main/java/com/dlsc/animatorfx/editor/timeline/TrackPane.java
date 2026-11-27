@@ -46,6 +46,10 @@ public final class TrackPane extends Region {
         record Bar(int row, String layerId, BarPart part) implements Hit {
         }
 
+        /** The editable volume graph; {@code key} is null between its points. */
+        record Volume(int row, String layerId, Keyframe<Double> key) implements Hit {
+        }
+
         /** Free space: {@code row} is the index of the row, or -1 below the last one. */
         record Empty(int row) implements Hit {
         }
@@ -61,6 +65,7 @@ public final class TrackPane extends Region {
     private final TimelineView timeline;
     private final TiledCanvas canvas = new TiledCanvas();
     private final TrackInteraction interaction;
+    private String volumeEditingLayer;
 
     TrackPane(TimelineView timeline) {
         this.timeline = timeline;
@@ -73,6 +78,31 @@ public final class TrackPane extends Region {
     /** The menu for the selected keyframes: Easing ▸ Linear / Hold / presets, and Delete. */
     public ContextMenu getKeyframeMenu() {
         return interaction.getKeyframeMenu();
+    }
+
+    /** The audio track menu, including its Edit Volume toggle. */
+    public ContextMenu getAudioMenu(String layerId) {
+        return interaction.getAudioMenu(layerId);
+    }
+
+    void editVolume(String layerId) {
+        interaction.cancel();
+        volumeEditingLayer = layerId;
+        timeline.requestLayout();
+    }
+
+    boolean isEditingVolume(String layerId) {
+        return layerId.equals(volumeEditingLayer);
+    }
+
+    double volumeToY(int row, double value) {
+        return timeline.rowTop(row) + AUDIO_BAR_INSET + 1.5
+                + (1 - Math.clamp(value, 0, 1)) * (TimelineView.ROW_HEIGHT - 2 * AUDIO_BAR_INSET - 4);
+    }
+
+    double volumeAtY(int row, double y) {
+        double top = volumeToY(row, 1);
+        return Math.clamp(1 - (y - top) / (TimelineView.ROW_HEIGHT - 2 * AUDIO_BAR_INSET - 4), 0, 1);
     }
 
     void cancelGesture() {
@@ -140,6 +170,19 @@ public final class TrackPane extends Region {
         double end = scale.toX(barEnd(row.layer(), duration));
         if (x < start - BAR_GRIP || x > end + BAR_GRIP) {
             return new Hit.Empty(index);
+        }
+        if (row.layer() instanceof AudioLayer audio && isEditingVolume(audio.id()) && x >= start && x <= end) {
+            Keyframe<Double> nearest = null;
+            double distance = KEY_REACH;
+            for (Keyframe<Double> key : audio.volume().keyframes()) {
+                if (key.time() < barStart(audio, duration) || key.time() > barEnd(audio, duration)) continue;
+                double d = Math.hypot(scale.toX(key.time()) - x, volumeToY(index, key.value()) - y);
+                if (d <= distance) {
+                    nearest = key;
+                    distance = d;
+                }
+            }
+            return new Hit.Volume(index, audio.id(), nearest);
         }
         boolean narrow = end - start < 3 * BAR_GRIP;
         BarPart part = x <= start + (narrow ? 0 : BAR_GRIP) ? BarPart.START
@@ -361,17 +404,19 @@ public final class TrackPane extends Region {
             }
             g.setLineDashes();
         }
-        if (layer.volume().isAnimated() && soundEnd > x1 + 1) {
+        boolean editing = isEditingVolume(layer.id());
+        double envelopeEnd = editing ? x2 : soundEnd;
+        if ((layer.volume().isAnimated() || editing) && envelopeEnd > x1 + 1) {
             // the volume envelope, where there is sound: full volume at the top of the bar
             g.save();
             g.beginPath();
-            g.rect(x1, top, soundEnd - x1, barHeight);
+            g.rect(x1, top, envelopeEnd - x1, barHeight);
             g.clip();
             g.setStroke(palette.get(Tone.KEY, audible ? 0.95 : 0.45));
             g.beginPath();
-            double room = barHeight - 3;
+            double room = barHeight - (editing ? 4 : 3);
             int from = (int) Math.max(x1, 0);
-            int to = (int) Math.min(soundEnd + 2, width);
+            int to = (int) Math.min(envelopeEnd + 2, width);
             for (int x = from; x <= to; x += 2) {
                 double volume = Math.clamp(layer.volume().at(scale.toTime(x)), 0, 1);
                 double vy = top + 1.5 + (1 - volume) * room;
@@ -388,7 +433,20 @@ public final class TrackPane extends Region {
 
         g.setStroke(palette.get(audible ? Tone.AUDIO : Tone.MUTED));
         g.strokeRoundRect(x1 + 0.5, top + 0.5, x2 - x1 - 1, barHeight - 1, 3, 3);
-        if (!row.expanded()) {
+        if (editing) {
+            int index = rowOf(layer.id());
+            for (Keyframe<Double> key : layer.volume().keyframes()) {
+                double x = scale.toX(key.time());
+                if (x < x1 || x > x2 || x < -KEY_REACH || x > width + KEY_REACH) continue;
+                double vy = volumeToY(index, key.value());
+                boolean selected = timeline.getDocument().getSelection().keyframes()
+                        .contains(new KeyframeRef(layer.id(), "volume", key.id()));
+                g.setFill(palette.get(selected ? Tone.FG : Tone.KEY));
+                g.fillOval(x - 3, vy - 3, 6, 6);
+                g.setStroke(palette.get(Tone.AUDIO));
+                g.strokeOval(x - 3, vy - 3, 6, 6);
+            }
+        } else if (!row.expanded()) {
             double cy = top + barHeight / 2;
             g.setFill(palette.get(Tone.KEY));
             for (double time : TimelineRows.keyTimes(layer)) {

@@ -43,6 +43,8 @@ See the [README](../README.md#quick-start) for Maven wrapper, packaging, and sam
 
 > **Start with a sample.** Use **File → Open…** to open `samples/animations/success.afx`. Press **Space** to preview it, then drag the playhead to see how its layers and keyframes work together.
 
+Toolbar playback looping is enabled by default. Switch off **loop** to play the animation once.
+
 ## 2. Make your first animation
 
 In this exercise, a rectangle moves across a two-second artboard. You will set its first keyframe manually and let Auto-Key record the second.
@@ -79,6 +81,18 @@ Draw rectangles, ellipses, lines, polygons, and stars with the shape tools. Use 
 In the timeline, drag rows to reorder layers or move them into groups. Lock a layer to prevent accidental editing; hide it to exclude it from the preview. Drag the middle of a layer bar to move its active interval, or drag an edge to change when the layer appears or disappears. Expand a row to edit its property keyframes.
 
 With the Select tool active, right-click the canvas for Cut, Copy, Paste, Duplicate, Group, Ungroup, and layer ordering. Right-clicking an unselected layer selects it; right-clicking a selected layer keeps the current selection. You can also paste onto empty canvas. Duplicated visual layers are offset slightly so the copies are visible.
+
+### Pick colors from the desktop
+
+Every color field has a pipette button beside its hex value, including solid paints, gradient
+stops and the document background. Activate it, then click the desired pixel anywhere on the
+desktop. The color changes as one undo step and keeps the field's existing transparency.
+**Escape** or a right-click cancels without changing the color.
+
+You can also point at a pixel and press **Enter** to pick without clicking the application
+behind it. Use this for system areas such as the macOS menu bar or Dock. macOS may require
+**System Settings → Privacy & Security → Screen Recording** permission for AnimatorFX, or for
+the Java launcher / IDE used to run it.
 
 ### Give a layer more movement
 
@@ -138,6 +152,24 @@ Use an **audio layer** for a clip that must follow timeline time, such as narrat
 3. In the **Audio** section of the Inspector, edit **Clip offset**, **Loop**, or **Mute**, and keyframe **Volume** or **Balance** as needed.
 
 The waveform is generated in the background. Compressed formats may take longer and show an approximate waveform. If you only want a reusable asset, use **Assets → Add…** instead of importing it as a layer.
+
+You can also drop audio files onto the window. Choose **Beginning** to insert at time zero,
+**Current Time Cursor** to use the playhead position when you dropped the files, or **Cancel**
+to import nothing. One choice applies to all audio files in the drop.
+If the chosen cursor is at the animation's end, the editor asks you to move it earlier or
+choose **Beginning**, rather than silently inserting the sound at zero.
+
+### Edit volume directly on the track
+
+Right-click an audio bar and enable **Edit Volume**. Click inside the bar to add a volume
+point, then drag a point horizontally to change its time or vertically to change its volume.
+The bottom is silence and the top is full volume. Points snap to animation frames; hold **Alt**
+for an unsnapped time. Select a point and press **Delete**, or right-click it for deletion and
+easing choices.
+
+Volume points are normal keyframes and are saved with the document. Auto-key need not be
+enabled, and changes support undo/redo; **Escape** cancels a point drag. Disable **Edit Volume**
+through the audio bar's context menu to resume moving and trimming the clip.
 
 ### Place a cue and preview
 

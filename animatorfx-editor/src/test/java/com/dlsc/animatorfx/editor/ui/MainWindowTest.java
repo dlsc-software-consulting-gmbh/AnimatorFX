@@ -360,6 +360,20 @@ class MainWindowTest {
     }
 
     @Test
+    void playbackLoopsByDefaultButTheToolbarCanSwitchItOff() {
+        MainWindow window = start();
+        run(() -> {
+            assertTrue(window.getToolBar().isLoop());
+            assertTrue(window.getCanvasView().isLoop());
+            ((javafx.scene.control.ToggleButton) window.getToolBar().lookup("#loop")).fire();
+            assertFalse(window.getToolBar().isLoop());
+            assertFalse(window.getCanvasView().isLoop());
+            window.getFileActions().newDocument();
+            assertFalse(window.getToolBar().isLoop());
+        });
+    }
+
+    @Test
     void headerZoomFollowsTheActiveDocument() {
         MainWindow window = start();
         run(() -> {

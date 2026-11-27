@@ -76,10 +76,11 @@ animations it creates inside JavaFX applications.
 
 - Canvas with select, shape, pen, text, image and slot tools, snapping, zoom and pan.
 - Timeline with a layer tree, keyframes, markers, in/out bars and a scrubbing playhead.
-- Sound: import of audio files, audio rows with waveforms, a cue lane, audible playback and
-  scrubbing, a mute switch.
+- Sound: import of audio files, audio rows with waveforms and editable volume graphs, a cue lane,
+  audible playback and scrubbing, a mute switch.
 - Video import, reusable assets, rectangular canvas editing, inspector controls and clip bars.
-- Inspector with a keyframe toggle on every animatable property and a cubic-bezier easing editor.
+- Inspector with a keyframe toggle on every animatable property, a cubic-bezier easing editor
+  and desktop color pipettes for solid colors, gradient stops and the document background.
 - Auto-key, undo/redo, copy/paste of layers and keyframes, groups.
 - Unique export names in the Layer inspector for application-facing live elements.
 - AI generation and project editing with OpenAI or Anthropic, including removable image/SVG
@@ -682,8 +683,10 @@ or resize, double-click to rename.
 ![Audio layers with waveforms and the cue lane in the timeline](docs/images/editor-audio.png)
 
 **Adding sounds.** *File ▸ Import ▸ Audio…* takes MP3, WAV, AIFF (`.aif`, `.aiff`), M4A and AAC
-files of up to 50 MB, several at once; sound files can also be dropped onto the window. Each
-becomes an asset of the document and an audio layer that starts at the playhead and lasts as long
+files of up to 50 MB, several at once. Dropping sound files onto the window asks once for the
+batch: *Beginning*, *Current Time Cursor*, or *Cancel*. Each imported sound
+becomes an asset of the document and an audio layer that starts at the chosen time (the playhead
+for menu imports) and lasts as long
 as the sound (cut at the end of the document), in one undo step. *Add…* in the *Assets* tab
 adds a sound without a layer; its row there has a button that places it on the timeline. A sound
 cannot be removed while a layer or a cue uses it.
@@ -694,6 +697,13 @@ layer bar shows the waveform of the sound, placed by the clip offset, repeated w
 at each repetition when the layer loops, and hatched where a sound that does not loop has ended.
 When the volume is animated, a thin line over the waveform shows its course. Expanded, the row
 lists *Volume* and *Balance* with their keyframes.
+
+**Editing volume on the track.** Right-click an audio bar and enable *Edit Volume*. Click inside
+the bar to add a point; drag a point horizontally to change its time and vertically to change
+volume, from silence at the bottom to full volume at the top. Points snap to frames unless
+*Alt* is held. Select a point and press *Delete*, or right-click it to delete it or change its
+easing. Changes use ordinary volume keyframes, work without auto-key, and support undo/redo.
+Disable *Edit Volume* through the same menu to resume moving and trimming the clip.
 
 **Waveforms** are worked out in the background and kept for the session; they are not stored in
 the document. For WAV and AIFF they are exact. For MP3 and M4A/AAC there is no decoder to read

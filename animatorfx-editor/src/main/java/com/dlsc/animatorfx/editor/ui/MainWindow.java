@@ -235,8 +235,9 @@ public final class MainWindow {
         scene = new Scene(root);
         theme.install(scene);
 
-        for (var view : List.of(toolBar.documentProperty(), statusBar.documentProperty(),
-                canvasView.documentProperty(), sidePanel.documentProperty(), timelineView.documentProperty())) {
+        // Cancel timeline drags before the canvas ends the old document's remaining gesture.
+        for (var view : List.of(timelineView.documentProperty(), toolBar.documentProperty(), statusBar.documentProperty(),
+                canvasView.documentProperty(), sidePanel.documentProperty())) {
             view.bind(workspace.activeDocumentProperty());
         }
         workspace.activeDocumentProperty().addListener((obs, oldDoc, newDoc) -> bindTitle(newDoc));
@@ -692,11 +693,15 @@ public final class MainWindow {
     /**
      * Opens the {@code .afx} files among the dropped files and imports the SVG ({@code .svg}),
      * Lottie ({@code .json}) and FXML ({@code .fxml}) files, each as a document of its own.
-     * Sound files become audio layers of the active document. Images are taken by the canvas.
+     * Sound files ask for insertion at the beginning or the captured cursor position of the
+     * active document. Images are taken by the canvas.
      *
      * @return whether any file was taken
      */
     boolean openDropped(List<File> files) {
+        EditorDocument audioDocument = workspace.getActiveDocument();
+        double cursorTime = audioDocument == null ? 0 : audioDocument.getPlayhead();
+        List<Path> sounds = new ArrayList<>();
         boolean opened = false;
         for (File file : files) {
             if (!isDroppable(file)) {
@@ -711,16 +716,26 @@ public final class MainWindow {
                 continue;
             }
             if (AudioImport.isAudio(file.toPath())) {
-                EditorDocument document = workspace.getActiveDocument();
-                if (document != null) {
-                    importActions.importAudio(document, file.toPath());
-                    opened = true;
-                }
+                sounds.add(file.toPath());
                 continue;
             }
             Optional<ImportActions.Kind> kind = ImportActions.Kind.of(file.toPath());
             opened |= kind.isPresent() ? importActions.importFile(file.toPath(), kind.get()).isPresent()
                     : fileActions.open(file.toPath()).isPresent();
+        }
+        if (audioDocument != null && !sounds.isEmpty()) {
+            canvasView.pausePlayback();
+            dialogs.chooseAudioInsertion(cursorTime).thenAccept(placement -> {
+                if (closed || !workspace.getDocuments().contains(audioDocument)
+                        || (placement != Dialogs.AudioPlacement.BEGINNING && placement != Dialogs.AudioPlacement.CURSOR)) {
+                    return;
+                }
+                double time = placement == Dialogs.AudioPlacement.BEGINNING ? 0 : cursorTime;
+                for (Path sound : sounds) {
+                    importActions.importAudio(audioDocument, sound, time);
+                }
+            });
+            opened = true;
         }
         return opened;
     }

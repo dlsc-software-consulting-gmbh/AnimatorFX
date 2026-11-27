@@ -17,6 +17,7 @@ import com.dlsc.animatorfx.importer.ImportResult;
 import com.dlsc.animatorfx.importer.LottieImporter;
 import com.dlsc.animatorfx.importer.SvgImporter;
 import com.dlsc.animatorfx.model.Animation;
+import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.GroupLayer;
 import com.dlsc.animatorfx.model.Layer;
@@ -145,6 +146,15 @@ public final class ImportActions {
      *         when the file was refused
      */
     public CompletableFuture<Optional<String>> importAudio(EditorDocument document, Path file) {
+        return importAudioAt(document, file, null);
+    }
+
+    /** Imports audio at the captured time, even if the playhead moves while the file is read. */
+    public CompletableFuture<Optional<String>> importAudio(EditorDocument document, Path file, double time) {
+        return importAudioAt(document, file, time);
+    }
+
+    private CompletableFuture<Optional<String>> importAudioAt(EditorDocument document, Path file, Double time) {
         CompletableFuture<AudioImport.Sound> read = AudioImport.read(file, message -> notices.show(message, null, null));
         CompletableFuture<Optional<String>> done = new CompletableFuture<>();
         // applied in the order asked for, whichever file is read first
@@ -156,7 +166,17 @@ public final class ImportActions {
                 if (error != null) {
                     refused(file, error);
                 } else if (workspace.getDocuments().contains(document)) {
-                    layer = Optional.of(AudioImport.addLayer(document, sound));
+                    if (time != null) {
+                        Animation animation = document.getAnimation();
+                        double at = animation.frameRate() > 0
+                                ? Math.round(time * animation.frameRate()) / animation.frameRate() : time;
+                        if (at >= animation.duration() - Animatable.TIME_EPSILON) {
+                            throw new IllegalArgumentException("The chosen time is at the end of the animation. "
+                                    + "Move the cursor earlier or choose Beginning.");
+                        }
+                    }
+                    layer = Optional.of(time == null ? AudioImport.addLayer(document, sound)
+                            : AudioImport.addLayer(document, sound, time));
                 }
             } catch (RuntimeException e) {
                 refused(file, e);

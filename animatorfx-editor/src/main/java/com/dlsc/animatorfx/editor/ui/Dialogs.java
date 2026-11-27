@@ -21,6 +21,16 @@ import java.util.concurrent.CompletableFuture;
 public interface Dialogs {
 
     enum CloseChoice {SAVE, DISCARD, CANCEL}
+    enum AudioPlacement {BEGINNING, CURSOR, CANCEL}
+
+    /**
+     * Asks where dropped audio should start. Implementations without this question cancel.
+     *
+     * @param cursorTime the cursor position captured when the files were dropped
+     */
+    default CompletableFuture<AudioPlacement> chooseAudioInsertion(double cursorTime) {
+        return CompletableFuture.completedFuture(AudioPlacement.CANCEL);
+    }
 
     /**
      * @return the chosen {@code .afx} file; empty when cancelled

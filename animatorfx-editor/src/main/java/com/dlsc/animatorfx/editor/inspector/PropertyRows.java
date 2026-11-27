@@ -140,6 +140,10 @@ public final class PropertyRows {
         ColorRow(SectionBase section, String key, String label) {
             super(section, key);
             field.setOnChange(this::write);
+            field.setOnScreenPick(color -> context().setValue(key, previous -> {
+                Rgba old = (Rgba) previous;
+                return new Rgba(color.r(), color.g(), color.b(), old.a());
+            }, null));
             field.setOnAdjustEnd(() -> context().endGesture());
             build(label, field);
         }
@@ -161,6 +165,17 @@ public final class PropertyRows {
         PaintRow(SectionBase section, String key, String label) {
             super(section, key);
             field.setOnChange(this::write);
+            field.getSolidField().setOnScreenPick(color -> context().setValue(key, previous -> {
+                double alpha = switch ((Paint) previous) {
+                    case Paint.Solid solid -> solid.color().a();
+                    case Paint.LinearGradient gradient ->
+                            gradient.stops().isEmpty() ? 1 : gradient.stops().getFirst().color().a();
+                    case Paint.RadialGradient gradient ->
+                            gradient.stops().isEmpty() ? 1 : gradient.stops().getFirst().color().a();
+                    case Paint.None none -> 1;
+                };
+                return new Paint.Solid(new Rgba(color.r(), color.g(), color.b(), alpha));
+            }, null));
             field.setOnAdjustEnd(() -> context().endGesture());
             build(label, field);
             // the gradient editor runs under the label and diamond columns, with rows of its own

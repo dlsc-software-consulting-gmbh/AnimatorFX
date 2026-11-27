@@ -26,6 +26,86 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AudioImportUiTest extends EditorUiTest {
 
     private final List<Path> picked = new ArrayList<>();
+    private CompletableFuture<Dialogs.AudioPlacement> placement;
+    private final List<Double> placementTimes = new ArrayList<>();
+
+    @Override
+    protected CompletableFuture<Dialogs.AudioPlacement> chooseAudioInsertion(double time) {
+        placementTimes.add(time);
+        return placement != null ? placement
+                : CompletableFuture.completedFuture(Dialogs.AudioPlacement.CURSOR);
+    }
+
+    @Test
+    void aDroppedBatchWaitsForOnePlacementChoiceAndCanStartAtTheBeginning() throws Exception {
+        placement = new CompletableFuture<>();
+        Path first = sound("first.wav", .5);
+        Path second = sound("second.wav", .75);
+        run(() -> doc.setPlayhead(1.5));
+        assertTrue(fx(() -> window.openDropped(List.of(first.toFile(), second.toFile()))));
+        assertTrue(doc.getAnimation().assets().isEmpty());
+        assertEquals(List.of(1.5), placementTimes);
+        run(() -> {
+            doc.setPlayhead(2);
+            placement.complete(Dialogs.AudioPlacement.BEGINNING);
+        });
+        settle();
+        assertEquals(2, doc.getAnimation().layers().size());
+        for (Layer layer : doc.getAnimation().layers()) {
+            assertEquals(0, layer.base().inPoint());
+        }
+    }
+
+    @Test
+    void aDroppedAudioUsesTheCapturedCursorAndDocumentEvenIfBothChangeBeforeTheAnswer() throws Exception {
+        placement = new CompletableFuture<>();
+        Path file = sound("cursor.wav", .5);
+        run(() -> {
+            doc.setPlayhead(1);
+            window.openDropped(List.of(file.toFile()));
+            doc.setPlayhead(2);
+            window.getFileActions().newDocument();
+            placement.complete(Dialogs.AudioPlacement.CURSOR);
+            doc.setPlayhead(2.5);
+        });
+        settle();
+        assertEquals(1, doc.getAnimation().layers().getFirst().base().inPoint());
+        assertTrue(window.getWorkspace().getActiveDocument().getAnimation().layers().isEmpty());
+    }
+
+    @Test
+    void cancellingThePlacementOrClosingItsDocumentAddsNoAssetsOrLayers() throws Exception {
+        Path file = sound("cancel.wav", .5);
+        placement = new CompletableFuture<>();
+        run(() -> {
+            window.openDropped(List.of(file.toFile()));
+            placement.complete(Dialogs.AudioPlacement.CANCEL);
+        });
+        settle();
+        assertTrue(doc.getAnimation().assets().isEmpty());
+
+        placement = new CompletableFuture<>();
+        run(() -> {
+            window.openDropped(List.of(file.toFile()));
+            window.getWorkspace().remove(doc);
+            placement.complete(Dialogs.AudioPlacement.BEGINNING);
+        });
+        settle();
+        assertTrue(doc.getAnimation().assets().isEmpty());
+        assertTrue(doc.getAnimation().layers().isEmpty());
+    }
+
+    @Test
+    void cursorPlacementAtTheAnimationEndDoesNotSilentlyInsertAtZero() throws Exception {
+        Path file = sound("end.wav", .5);
+        run(() -> {
+            doc.setPlayhead(doc.getAnimation().duration());
+            window.openDropped(List.of(file.toFile()));
+        });
+        settle();
+        assertTrue(doc.getAnimation().assets().isEmpty());
+        assertTrue(doc.getAnimation().layers().isEmpty());
+    }
 
     @BeforeEach
     void stubThePicker() {

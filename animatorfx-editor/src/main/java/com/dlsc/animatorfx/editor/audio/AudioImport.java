@@ -178,10 +178,15 @@ public final class AudioImport {
      * @return the id of the new layer
      */
     public static String addLayer(EditorDocument document, Sound sound) {
+        return addLayer(document, sound, document.getPlayhead());
+    }
+
+    /** Adds the sound and its audio layer at a captured timeline position, as one undo step. */
+    public static String addLayer(EditorDocument document, Sound sound, double time) {
         Asset asset = asset(sound);
         String layerId = UUID.randomUUID().toString();
         double length = sound.info().duration();
-        document.execute(Commands.addAudioLayer(layerId, sound.baseName(), asset.id(), document.getPlayhead(), length),
+        document.execute(Commands.addAudioLayer(layerId, sound.baseName(), asset.id(), time, length),
                 Map.of(asset, sound.bytes()));
         adopt(document, asset, sound);
         document.getSelection().layerIds().setAll(layerId);
