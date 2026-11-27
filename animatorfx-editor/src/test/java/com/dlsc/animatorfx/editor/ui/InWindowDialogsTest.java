@@ -115,6 +115,7 @@ class InWindowDialogsTest {
             run(generate::fire);
             WaitForAsyncUtils.waitFor(5, TimeUnit.SECONDS,
                     () -> fx(() -> window.getScene().lookup("#ai-provider-required-message") != null));
+            settle(window);
             click(window, "Open AI Preferences");
             assertNotNull(fx(() -> window.getScene().lookup("#ai-provider")));
         } finally {
