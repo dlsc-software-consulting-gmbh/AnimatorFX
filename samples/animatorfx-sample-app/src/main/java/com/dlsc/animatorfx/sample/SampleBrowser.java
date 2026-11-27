@@ -50,7 +50,21 @@ public final class SampleBrowser extends BorderPane {
         list.setPrefWidth(150);
         list.getItems().addAll(Samples.SHOWCASE);
         list.getSelectionModel().selectedItemProperty().addListener((observable, old, name) -> show(name));
-        setLeft(list);
+        Button stateMachineDemo = new Button("State machine demo");
+        stateMachineDemo.setId("open-state-machine-demo");
+        stateMachineDemo.setMaxWidth(Double.MAX_VALUE);
+        stateMachineDemo.setOnAction(event -> {
+            StateMachineDemo demo = new StateMachineDemo();
+            Stage dialog = new Stage();
+            dialog.initOwner(getScene().getWindow());
+            dialog.setTitle("AnimatorFX - State Machine Demo");
+            dialog.setScene(new Scene(demo, 640, 480));
+            dialog.setOnHidden(hidden -> demo.dispose());
+            dialog.show();
+        });
+        VBox sidebar = new VBox(8, list, stateMachineDemo);
+        VBox.setVgrow(list, Priority.ALWAYS);
+        setLeft(sidebar);
 
         dark.setId("dark");
         dark.setSelected(true);

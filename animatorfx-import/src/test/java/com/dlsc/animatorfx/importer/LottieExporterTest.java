@@ -21,6 +21,7 @@ import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.SoundCue;
+import com.dlsc.animatorfx.model.StateMachine;
 import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Vec2;
@@ -114,6 +115,16 @@ class LottieExporterTest {
         assertEquals(15, animation.markers().get(0).time(), EPS);
         assertEquals(30, animation.markers().get(0).duration(), EPS);
         assertEquals(List.of(), export.warnings());
+    }
+
+    @Test
+    void warnsWhenStateMachinesCannotBeExported() throws IOException {
+        StateMachine machine = new StateMachine("button", "idle",
+                List.of(new StateMachine.State("idle", "idle", true, 0, 0)), List.of());
+        LottieExport export = LottieExporter.convert(file(document()
+                .withMarkers(List.of(new Marker("idle", 0, 1))).withStateMachines(List.of(machine))));
+
+        assertTrue(export.warnings().stream().anyMatch(warning -> warning.contains("State machines")));
     }
 
     @Test

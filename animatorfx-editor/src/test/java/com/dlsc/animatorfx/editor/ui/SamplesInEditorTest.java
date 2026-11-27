@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -54,6 +55,29 @@ class SamplesInEditorTest extends EditorUiTest {
         assertEquals(List.of(), fx(() -> window.getNoticeBar().getMessages()));
         // one timeline row per top-level layer while nothing is expanded
         assertEquals(opened.getAnimation().layers().size(), fx(() -> timeline.getRows().size()));
+    }
+
+    @Test
+    void stateMachineSampleOpensWithItsGraphReadyToInspect() {
+        EditorDocument opened = open("state-machine");
+        assertEquals("interaction", opened.getAnimation().stateMachines().getFirst().name());
+        run(() -> window.menuItem("menu-view-state-machines").fire());
+        layout();
+        assertNotNull(fx(() -> window.getScene().lookup("#sm-node-idle")));
+        assertNotNull(fx(() -> window.getScene().lookup("#sm-node-working")));
+        assertNotNull(fx(() -> window.getScene().lookup("#sm-node-done")));
+        assertNotNull(fx(() -> window.getScene().lookup("#sm-edge-2")));
+    }
+
+    @Test
+    void downloadWorkflowSampleOpensWithSixEditableStates() {
+        EditorDocument opened = open("download-workflow");
+        assertEquals(6, opened.getAnimation().stateMachines().getFirst().states().size());
+        run(() -> window.menuItem("menu-view-state-machines").fire());
+        layout();
+        assertNotNull(fx(() -> window.getScene().lookup("#sm-node-ready")));
+        assertNotNull(fx(() -> window.getScene().lookup("#sm-node-downloading")));
+        assertNotNull(fx(() -> window.getScene().lookup("#sm-node-failed")));
     }
 
     /** What a file argument does (AnimatorApp hands every argument to FileActions.open). */

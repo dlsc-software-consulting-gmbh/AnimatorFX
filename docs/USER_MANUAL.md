@@ -137,6 +137,29 @@ Requests share project structure, layer names, text, selection, playhead and rec
 - **Slot:** a named placeholder for a JavaFX node. Choose the **Slot** tool (**K**), drag a rectangle, and give it a unique name such as `title`. Animate the slot just like a visual layer. Use the same name when you bind the node in Java.
 - **Live element:** select one unlocked visual layer and set **Layer → Export name**, such as `greeting`. This exposes the authored layer to your application without replacing it with a slot. Export names must be unique throughout the document, including nested groups; they are separate from display names and internal IDs. An empty export name keeps a layer private, and duplicated or pasted copies start without exports. See [Interact with an authored element](#interact-with-an-authored-element).
 
+### Author an interactive state machine
+
+1. Create a marker for each animation range you want a state to play.
+2. Choose **View → State Machines** and click **New Machine**. Rename it in the inspector and
+   click **Rename**. The first state uses the first marker.
+3. Select a state in the graph or the state list. Set its name, marker, and whether it loops;
+   check **Initial state** for the state to enter when the machine starts. Click **Apply State**.
+   Use **Add State** to create more, and drag nodes to arrange the graph.
+4. Select a source state, choose a target and enter an event name, then click **Add Transition**.
+   Leave the event empty to transition when a non-looping state's marker finishes. Select an
+   arrow or an item in **Transitions** to edit or delete it.
+5. Resolve any missing-marker or duplicate-transition message in the inspector. Use **Undo** and
+   **Redo** for graph changes, and **Canvas** to return to the animation.
+
+Machines and graph positions are saved in `.afx`. Lottie export omits them and reports a warning.
+Your application supplies events; a state change immediately interrupts the current marker.
+
+For a complete example, open `samples/animations/download-workflow.afx` and choose **View →
+State Machines**. Its six states have different visuals and markers. In the sample application,
+**State machine demo** lets you start, pause, resume, simulate failure, retry, and reset while
+showing the current state and most recent transition. Connecting and downloading advance on
+completion; resuming starts the download animation again.
+
 ## 4. Add sound
 
 Use an **audio layer** for a clip that must follow timeline time, such as narration or music. Use a **cue** for a one-shot sound, such as a click or completion chime.
@@ -302,6 +325,26 @@ Use JavaFX's application thread to configure and control the view. A view pauses
 ### Play a named range
 
 If the animation has a marker named `intro`, replace `view.play()` with `view.playMarker("intro")`. A marker plays just its range and respects cycle count and auto-reverse. Use an exact name: an unknown marker raises `IllegalArgumentException`. The underlying `AnimationPlayer`, available through `view.getPlayer()`, exposes `setOnFinished` and `setOnMarkerReached`.
+
+### Run a state machine
+
+After loading an animation containing a machine named `button`, retrieve it and send it events:
+
+```java
+// Imports: com.dlsc.animatorfx.model.StateMachine,
+//          com.dlsc.animatorfx.player.StateMachineController
+StateMachine machine = view.getAnimation().animation().stateMachines().stream()
+        .filter(m -> m.name().equals("button")).findFirst().orElseThrow();
+StateMachineController controller = new StateMachineController(view.getPlayer(), machine);
+controller.start();
+controller.send("click"); // an unmatched event is ignored
+// When the machine is no longer needed:
+controller.stop();
+```
+
+The controller runs on the JavaFX application thread, validates its markers on start, and directs
+the player until stopped. A non-looping state may transition on completion. Stop the controller
+before controlling the player directly; replacing the animation also stops it.
 
 ### Interact with an authored element
 

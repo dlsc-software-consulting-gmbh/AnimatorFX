@@ -20,6 +20,7 @@ import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.SoundCue;
+import com.dlsc.animatorfx.model.StateMachine;
 import com.dlsc.animatorfx.model.Stroke;
 import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
@@ -102,7 +103,126 @@ final class SampleGenerator {
         samples.put("orbit", new SampleGenerator("orbit", 4).file(SampleGenerator::orbit));
         samples.put("attention", new SampleGenerator("attention", 0.8).file(SampleGenerator::attention));
         samples.put("live-elements", new SampleGenerator("live-elements", 2).file(SampleGenerator::liveElements));
+        AnimationFile success = samples.get("success");
+        StateMachine machine = new StateMachine("interaction", "idle",
+                List.of(new StateMachine.State("idle", "success", true, 50, 50),
+                        new StateMachine.State("working", "intro", false, 300, 50),
+                        new StateMachine.State("done", "success", true, 175, 230)),
+                List.of(new StateMachine.Transition("idle", "working", "start"),
+                        new StateMachine.Transition("working", "idle", "cancel"),
+                        new StateMachine.Transition("working", "done", null),
+                        new StateMachine.Transition("done", "idle", "reset")));
+        samples.put("state-machine", new AnimationFile(
+                success.animation().withName("state-machine").withStateMachines(List.of(machine)), success.assets()));
+        samples.put("download-workflow", new SampleGenerator("download", 15.4).file(SampleGenerator::downloadWorkflow));
         return samples;
+    }
+
+    private Animation downloadWorkflow() {
+        List<Marker> markers = List.of(new Marker("ready", 0, 1.2),
+                new Marker("connecting", 1.2, 3.8), new Marker("downloading", 3.8, 11.8),
+                new Marker("paused", 11.8, 13), new Marker("complete", 13, 14.2),
+                new Marker("failed", 14.2, 15.4));
+        StateMachine machine = new StateMachine("download", "ready",
+                List.of(new StateMachine.State("ready", "ready", true, 50, 60),
+                        new StateMachine.State("connecting", "connecting", false, 300, 60),
+                        new StateMachine.State("downloading", "downloading", false, 550, 60),
+                        new StateMachine.State("paused", "paused", true, 550, 260),
+                        new StateMachine.State("complete", "complete", true, 800, 60),
+                        new StateMachine.State("failed", "failed", true, 300, 260)),
+                List.of(new StateMachine.Transition("ready", "connecting", "start"),
+                        new StateMachine.Transition("connecting", "downloading", null),
+                        new StateMachine.Transition("connecting", "failed", "fail"),
+                        new StateMachine.Transition("connecting", "ready", "reset"),
+                        new StateMachine.Transition("downloading", "complete", null),
+                        new StateMachine.Transition("downloading", "paused", "pause"),
+                        new StateMachine.Transition("downloading", "failed", "fail"),
+                        new StateMachine.Transition("downloading", "ready", "reset"),
+                        new StateMachine.Transition("paused", "downloading", "resume"),
+                        new StateMachine.Transition("paused", "failed", "fail"),
+                        new StateMachine.Transition("paused", "ready", "reset"),
+                        new StateMachine.Transition("failed", "connecting", "retry"),
+                        new StateMachine.Transition("failed", "ready", "reset"),
+                        new StateMachine.Transition("complete", "ready", "reset")));
+
+        List<Layer> layers = new ArrayList<>();
+        layers.add(new ShapeLayer(base("background", "Background"),
+                new Geometry.Rect(Animatable.of(new Vec2(600, 360)), Animatable.of(24.0)),
+                Animatable.of(solid("#0F172A")), null, null));
+        layers.add(downloadText("heading", "FILE TRANSFER", 300, 28, 14, "#94A3B8", 0, duration));
+        String[] names = {"ready", "connecting", "downloading", "paused", "complete", "failed"};
+        String[] titles = {"Ready", "Connecting", "Downloading", "Paused", "Complete", "Failed"};
+        String[] captions = {"Press Start to begin", "Establishing a connection...",
+                "Transferring your file", "Resume restarts the transfer", "Your file is ready",
+                "The connection was interrupted"};
+        String[] colours = {"#94A3B8", "#38BDF8", "#60A5FA", "#FBBF24", "#34D399", "#FB7185"};
+        for (int i = 0; i < names.length; i++) {
+            Marker marker = markers.get(i);
+            String name = names[i];
+            String colour = colours[i];
+            LayerBase circle = downloadBase(name + "-badge", "State badge", marker)
+                    .withTransform(Transform.at(250, 70));
+            layers.add(new ShapeLayer(circle, new Geometry.Ellipse(Animatable.of(new Vec2(100, 100))),
+                    Animatable.of(solid(colour + "33")), null, null));
+            layers.add(downloadText(name + "-title", titles[i], 300, 185, 34, colour, marker.start(), marker.end()));
+            layers.add(downloadText(name + "-caption", captions[i], 300, 230, 16, "#CBD5E1",
+                    marker.start(), marker.end()));
+        }
+
+        layers.add(downloadLine("ready-arrow", markers.get(0), "#94A3B8",
+                300, 91, 300, 139, 285, 124, 300, 139, 315, 124));
+        layers.add(downloadLine("ready-tray", markers.get(0), "#94A3B8",
+                280, 146, 320, 146));
+        Marker connecting = markers.get(1);
+        Transform spinner = centred(28, 28, 300, 120).withRotation(keys(
+                key(connecting.start(), 0.0, Easing.LINEAR), key(connecting.end(), 720.0, Easing.LINEAR)));
+        layers.add(new ShapeLayer(downloadBase("spinner", "Connecting spinner", connecting).withTransform(spinner),
+                new Geometry.Ellipse(Animatable.of(new Vec2(56, 56))), none(),
+                stroke(Animatable.of(solid("#38BDF8")), 7, Stroke.Cap.ROUND),
+                new Trim(Animatable.of(0.0), Animatable.of(0.72), Animatable.of(0.0))));
+        Marker downloading = markers.get(2);
+        layers.add(downloadLine("downloading-arrow", downloading, "#60A5FA",
+                300, 91, 300, 139, 285, 124, 300, 139, 315, 124));
+        layers.add(new ShapeLayer(downloadBase("progress-track", "Progress track", downloading)
+                .withTransform(Transform.at(100, 278)),
+                new Geometry.Rect(Animatable.of(new Vec2(400, 14)), Animatable.of(7.0)),
+                Animatable.of(solid("#334155")), null, null));
+        Transform progress = Transform.at(100, 278).withScale(keys(
+                key(downloading.start(), new Vec2(0.02, 1), Easing.LINEAR),
+                key(downloading.end(), Vec2.ONE, Easing.LINEAR)));
+        layers.add(new ShapeLayer(downloadBase("progress", "Progress", downloading).withTransform(progress),
+                new Geometry.Rect(Animatable.of(new Vec2(400, 14)), Animatable.of(7.0)),
+                Animatable.of(solid("#60A5FA")), null, null));
+        Marker paused = markers.get(3);
+        layers.add(downloadLine("paused-bars", paused, "#FBBF24", 289, 97, 289, 143));
+        layers.add(downloadLine("paused-bars-2", paused, "#FBBF24", 311, 97, 311, 143));
+        layers.add(downloadLine("complete-check", markers.get(4), "#34D399", 278, 120, 293, 135, 323, 103));
+        layers.add(downloadLine("failed-cross", markers.get(5), "#FB7185", 283, 103, 317, 137));
+        layers.add(downloadLine("failed-cross-2", markers.get(5), "#FB7185", 317, 103, 283, 137));
+        return document(600, 360, markers, layers.toArray(Layer[]::new)).withStateMachines(List.of(machine));
+    }
+
+    private LayerBase downloadBase(String id, String label, Marker marker) {
+        return base(id, label).withInPoint(marker.start()).withOutPoint(marker.end());
+    }
+
+    private Layer downloadText(String id, String text, double x, double y, double size, String colour,
+                               double start, double end) {
+        return new TextLayer(base(id, text).withInPoint(start).withOutPoint(end)
+                .withTransform(Transform.at(x, y)), text, "System", null, Animatable.of(size),
+                TextLayer.Weight.BOLD, false, TextLayer.Align.CENTER, Animatable.of(solid(colour)), null);
+    }
+
+    private Layer downloadLine(String id, Marker marker, String colour, double... points) {
+        List<PathData.Vertex> vertices = new ArrayList<>();
+        for (int i = 0; i < points.length; i += 2) {
+            vertices.add(corner(points[i], points[i + 1]));
+        }
+        PathData path = new PathData(List.of(new PathData.Contour(vertices, false)));
+        Stroke line = new Stroke(Animatable.of(solid(colour)), Animatable.of(7.0), Stroke.Cap.ROUND,
+                Stroke.Join.ROUND, 10, List.of(), Animatable.of(0.0));
+        return new ShapeLayer(downloadBase(id, id, marker),
+                new Geometry.PathGeometry(Animatable.of(path)), none(), line, null);
     }
 
     static void writeAll(Path directory) throws IOException {

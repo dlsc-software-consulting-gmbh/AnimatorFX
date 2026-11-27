@@ -143,6 +143,7 @@ public class AnimationPlayer {
     /** Changes with every control call, so a tick notices that a handler took over. */
     private int epoch;
     private Runnable bindingsListener;
+    private Runnable stateMachineCompletion;
 
     private Function<AnimationFile, AudioOutput> audioOutputFactory;
     /** The sound of the current animation; {@code null} until needed and for a document without sound. */
@@ -613,14 +614,16 @@ public class AnimationPlayer {
         if (file == null || file.animation().marker(name).isEmpty()) {
             throw new IllegalArgumentException("Unknown marker: " + name);
         }
-        epoch++;
+        int playEpoch = ++epoch;
         audioReleased = false;
         resumeVideo();
         activeMarker.set(name);
+        if (epoch != playEpoch) return;
         updateRange();
         completedCycles = 0;
         reversed = false;
         jumpTo(getRate() < 0 ? rangeEnd : rangeStart);
+        if (epoch != playEpoch) return;
         if (!(rangeEnd > rangeStart)) {
             finish();
             return;
@@ -970,15 +973,33 @@ public class AnimationPlayer {
 
     private void finish() {
         epoch++;
+        int finishedEpoch = epoch;
         completedCycles = 0;
         reversed = false;
         activeMarker.set(null);
+        if (epoch != finishedEpoch) return;
         updateRange();
         status.set(Status.STOPPED);
         updateClock();
         EventHandler<ActionEvent> handler = getOnFinished();
         if (handler != null) {
             handler.handle(new ActionEvent(this, null));
+        }
+        if (epoch == finishedEpoch && stateMachineCompletion != null) {
+            stateMachineCompletion.run();
+        }
+    }
+
+    void attachStateMachine(Runnable completion) {
+        if (stateMachineCompletion != null) {
+            throw new IllegalStateException("A state machine is already attached");
+        }
+        stateMachineCompletion = completion;
+    }
+
+    void detachStateMachine(Runnable completion) {
+        if (stateMachineCompletion == completion) {
+            stateMachineCompletion = null;
         }
     }
 

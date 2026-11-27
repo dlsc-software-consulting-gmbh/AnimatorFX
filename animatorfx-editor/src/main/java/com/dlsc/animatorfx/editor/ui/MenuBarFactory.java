@@ -175,7 +175,9 @@ final class MenuBarFactory {
         MenuItem paste = textAware("menu-edit-paste", "Paste", shortcut(KeyCode.V), TextInputControl::paste,
                 this::paste);
         MenuItem selectAll = textAware("menu-edit-select-all", "Select All", shortcut(KeyCode.A),
-                TextInputControl::selectAll, () -> actions().selectAll());
+                TextInputControl::selectAll, () -> {
+                    if (!window.isStateMachineShowing()) actions().selectAll();
+                });
         MenuItem duplicate = onLayers("menu-edit-duplicate", "Duplicate", shortcut(KeyCode.D), CanvasActions::duplicate);
         MenuItem delete = onLayers("menu-edit-delete", "Delete", null, a -> {
             if (window.getTimelineView().deletesHere()) {
@@ -251,7 +253,7 @@ final class MenuBarFactory {
         keyframesCopiedLast = keyframes().hasSelection();
         if (keyframesCopiedLast) {
             keyframes().copy();
-        } else {
+        } else if (!window.isStateMachineShowing()) {
             actions().copy();
         }
     }
@@ -261,7 +263,7 @@ final class MenuBarFactory {
         if (keyframesCopiedLast) {
             keyframes().copy();
             keyframes().delete();
-        } else {
+        } else if (!window.isStateMachineShowing()) {
             actions().cut();
         }
     }
@@ -269,7 +271,7 @@ final class MenuBarFactory {
     private void paste() {
         if (keyframes().hasSelection() || keyframesCopiedLast) {
             keyframes().paste();
-        } else {
+        } else if (!window.isStateMachineShowing()) {
             actions().paste();
         }
     }
@@ -296,7 +298,8 @@ final class MenuBarFactory {
     /** An item for the selected layers; it does nothing while a text input has the focus. */
     private MenuItem onLayers(String id, String text, KeyCombination accelerator, Consumer<CanvasActions> action) {
         return item(id, text, accelerator, () -> {
-            if (focusedText() == null) {
+            if (focusedText() == null && (!window.isStateMachineShowing()
+                    || ("menu-edit-delete".equals(id) && window.getTimelineView().deletesHere()))) {
                 action.accept(actions());
             }
         });
@@ -306,6 +309,8 @@ final class MenuBarFactory {
         CanvasView canvas = window.getCanvasView();
         MenuItem preview = item("menu-view-preview-player", "Preview in Player…", null, window::showPlayerPreview);
         preview.disableProperty().bind(workspace.activeDocumentProperty().isNull());
+        MenuItem machines = item("menu-view-state-machines", "State Machines", null, window::showStateMachines);
+        machines.disableProperty().bind(workspace.activeDocumentProperty().isNull());
         Theme theme = window.getTheme();
         ToggleGroup group = new ToggleGroup();
         Menu themes = new Menu("Theme");
@@ -348,7 +353,7 @@ final class MenuBarFactory {
         Menu menu = new Menu("View");
         menu.setId("menu-view");
         menu.getItems().addAll(
-                preview, new SeparatorMenuItem(),
+                preview, machines, new SeparatorMenuItem(),
                 item("menu-view-zoom-in", "Zoom In", shortcut(KeyCode.PLUS), canvas::zoomIn),
                 item("menu-view-zoom-out", "Zoom Out", shortcut(KeyCode.MINUS), canvas::zoomOut),
                 item("menu-view-zoom-fit", "Zoom to Fit", shortcut(KeyCode.DIGIT0), canvas::zoomToFit),

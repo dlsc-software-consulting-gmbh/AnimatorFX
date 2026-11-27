@@ -22,6 +22,12 @@ public final class Samples {
     /** The animation used by the live-element interaction demonstration. */
     public static final String LIVE_ELEMENTS = "live-elements";
 
+    /** The animation used by the state machine demonstration. */
+    public static final String STATE_MACHINE = "state-machine";
+
+    /** The animation used by the download workflow demonstration. */
+    public static final String DOWNLOAD_WORKFLOW = "download-workflow";
+
     private Samples() {
     }
 

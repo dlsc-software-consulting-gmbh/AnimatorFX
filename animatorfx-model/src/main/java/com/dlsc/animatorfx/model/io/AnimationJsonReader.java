@@ -21,6 +21,7 @@ import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.SoundCue;
+import com.dlsc.animatorfx.model.StateMachine;
 import com.dlsc.animatorfx.model.Stroke;
 import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
@@ -65,8 +66,33 @@ final class AnimationJsonReader {
         List<Asset> assets = assets(root.elements("assets"));
         List<Layer> layers = layers(root.elements("layers"), 1);
         List<SoundCue> cues = cues(root.elements("cues"));
+        List<StateMachine> stateMachines = stateMachines(root.elements("stateMachines"));
         return new Animation(Animation.CURRENT_FORMAT, name, width, height, frameRate, duration, background, markers,
-                assets, layers, cues);
+                assets, layers, cues, stateMachines);
+    }
+
+    private List<StateMachine> stateMachines(List<Node> nodes) throws AnimationFormatException {
+        List<StateMachine> machines = new ArrayList<>();
+        for (Node node : nodes) {
+            try {
+                List<StateMachine.State> states = new ArrayList<>();
+                for (Node state : node.elements("states")) {
+                    states.add(new StateMachine.State(state.required("name").string(),
+                            state.required("marker").string(), state.get("loop").bool(false),
+                            state.get("x").number(0), state.get("y").number(0)));
+                }
+                List<StateMachine.Transition> transitions = new ArrayList<>();
+                for (Node transition : node.elements("transitions")) {
+                    transitions.add(new StateMachine.Transition(transition.required("source").string(),
+                            transition.required("target").string(), transition.get("event").string(null)));
+                }
+                machines.add(new StateMachine(node.required("name").string(),
+                        node.required("initialState").string(), states, transitions));
+            } catch (IllegalArgumentException e) {
+                throw node.error(e.getMessage(), e);
+            }
+        }
+        return machines;
     }
 
     private List<SoundCue> cues(List<Node> nodes) throws AnimationFormatException {

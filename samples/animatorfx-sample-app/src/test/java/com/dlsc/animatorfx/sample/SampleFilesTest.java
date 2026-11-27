@@ -14,6 +14,7 @@ import com.dlsc.animatorfx.model.PathData;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.SoundCue;
+import com.dlsc.animatorfx.model.StateMachine;
 import com.dlsc.animatorfx.model.Stroke;
 import com.dlsc.animatorfx.model.Vec2;
 import com.dlsc.animatorfx.model.io.AnimationFile;
@@ -78,6 +79,54 @@ class SampleFilesTest {
 
     private static Animation committed(String name) throws IOException {
         return AnimationIO.read(DIRECTORY.resolve(name + ".afx")).animation();
+    }
+
+    @Test
+    void stateMachineSampleContainsAnEditablePlayableGraph() throws IOException {
+        if (Boolean.getBoolean("animatorfx.stateMachine.write")) {
+            AnimationIO.write(SampleGenerator.files().get("state-machine"), DIRECTORY.resolve("state-machine.afx"));
+        }
+        assertTrue(Files.exists(DIRECTORY.resolve("state-machine.afx")), "state machine sample is missing");
+        Animation animation = committed("state-machine");
+        assertEquals(1, animation.stateMachines().size());
+        StateMachine machine = animation.stateMachines().getFirst();
+        assertEquals("interaction", machine.name());
+        assertEquals("idle", machine.initialState());
+        assertEquals(List.of("idle", "working", "done"),
+                machine.states().stream().map(StateMachine.State::name).toList());
+        assertTrue(machine.transitions().contains(new StateMachine.Transition("idle", "working", "start")));
+        assertTrue(machine.transitions().contains(new StateMachine.Transition("working", "idle", "cancel")));
+        assertTrue(machine.transitions().contains(new StateMachine.Transition("working", "done", null)));
+        assertTrue(machine.transitions().contains(new StateMachine.Transition("done", "idle", "reset")));
+        machine.validateMarkers(animation);
+    }
+
+    @Test
+    void downloadWorkflowHasDistinctVisibleStatesAndAnimatedProgress() throws IOException {
+        if (Boolean.getBoolean("animatorfx.downloadWorkflow.write")) {
+            AnimationIO.write(SampleGenerator.files().get("download-workflow"),
+                    DIRECTORY.resolve("download-workflow.afx"));
+        }
+        assertTrue(Files.exists(DIRECTORY.resolve("download-workflow.afx")), "download workflow sample is missing");
+        Animation animation = committed("download-workflow");
+        assertEquals(SampleGenerator.files().get("download-workflow").animation(), animation);
+        StateMachine machine = animation.stateMachines().getFirst();
+        assertEquals("download", machine.name());
+        assertEquals("ready", machine.initialState());
+        assertEquals(List.of("ready", "connecting", "downloading", "paused", "complete", "failed"),
+                machine.states().stream().map(StateMachine.State::name).toList());
+        machine.validateMarkers(animation);
+        for (StateMachine.State state : machine.states()) {
+            Marker marker = animation.marker(state.marker()).orElseThrow();
+            Frame frame = Evaluator.sample(animation, (marker.start() + marker.end()) / 2);
+            for (StateMachine.State candidate : machine.states()) {
+                assertEquals(candidate.equals(state), frame.get("download-" + candidate.name() + "-title").visible(),
+                        "wrong visual state while playing " + state.name());
+            }
+        }
+        Marker downloading = animation.marker("downloading").orElseThrow();
+        assertTrue(Evaluator.sample(animation, downloading.start() + 0.1).get("download-progress").scale().x()
+                < Evaluator.sample(animation, downloading.end() - 0.1).get("download-progress").scale().x());
     }
 
     @Test
@@ -153,10 +202,17 @@ class SampleFilesTest {
             actual = entries(in);
         }
         assertEquals(new ArrayList<>(expected.keySet()), new ArrayList<>(actual.keySet()), hint);
-        assertEquals(new String(expected.get("animation.json"), StandardCharsets.UTF_8),
-                new String(actual.get("animation.json"), StandardCharsets.UTF_8), hint);
+        String actualJson = new String(actual.get("animation.json"), StandardCharsets.UTF_8);
+        if (committed.animation().stateMachines().isEmpty()) {
+            // Older samples need not be rewritten just because the current writer upgrades the version.
+            actualJson = actualJson.replaceFirst("\"formatVersion\": 3,",
+                    "\"formatVersion\": " + Animation.CURRENT_FORMAT + ",");
+        }
+        assertEquals(new String(expected.get("animation.json"), StandardCharsets.UTF_8), actualJson, hint);
         for (String entry : expected.keySet()) {
-            assertArrayEquals(expected.get(entry), actual.get(entry), hint + ": " + entry);
+            if (!entry.equals("animation.json")) {
+                assertArrayEquals(expected.get(entry), actual.get(entry), hint + ": " + entry);
+            }
         }
     }
 
@@ -185,9 +241,13 @@ class SampleFilesTest {
     void theBrowserShowsTheShowcasesButNotTheDedicatedDemos() {
         Set<String> all = SampleGenerator.all().keySet();
         assertEquals(all.stream().filter(name -> !name.equals(Samples.ATTENTION)
-                && !name.equals(Samples.LIVE_ELEMENTS)).toList(), Samples.SHOWCASE);
+                && !name.equals(Samples.LIVE_ELEMENTS) && !name.equals(Samples.STATE_MACHINE)
+                && !name.equals(Samples.DOWNLOAD_WORKFLOW)).toList(),
+                Samples.SHOWCASE);
         assertTrue(all.contains(Samples.ATTENTION));
         assertTrue(all.contains(Samples.LIVE_ELEMENTS));
+        assertTrue(all.contains(Samples.STATE_MACHINE));
+        assertTrue(all.contains(Samples.DOWNLOAD_WORKFLOW));
     }
 
     @ParameterizedTest

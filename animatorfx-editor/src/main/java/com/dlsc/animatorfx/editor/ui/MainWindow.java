@@ -99,6 +99,7 @@ public final class MainWindow {
     private final ToolRail toolRail = new ToolRail();
     private final StatusBar statusBar = new StatusBar();
     private final CanvasView canvasView = new CanvasView();
+    private final StateMachineView stateMachineView = new StateMachineView();
     private final SidePanel sidePanel = new SidePanel();
     private final AiConsole aiConsole = new AiConsole();
     private final AiChat aiChat;
@@ -237,9 +238,10 @@ public final class MainWindow {
 
         // Cancel timeline drags before the canvas ends the old document's remaining gesture.
         for (var view : List.of(timelineView.documentProperty(), toolBar.documentProperty(), statusBar.documentProperty(),
-                canvasView.documentProperty(), sidePanel.documentProperty())) {
+                canvasView.documentProperty(), sidePanel.documentProperty(), stateMachineView.documentProperty())) {
             view.bind(workspace.activeDocumentProperty());
         }
+        stateMachineView.setOnClose(() -> setCanvasContent(canvasView));
         workspace.activeDocumentProperty().addListener((obs, oldDoc, newDoc) -> bindTitle(newDoc));
         bindTitle(null);
         installCanvas();
@@ -306,6 +308,7 @@ public final class MainWindow {
         if (closed || document == null) {
             return;
         }
+
         canvasView.pausePlayback();
         SoundPreview.shared().stop();
         AnimationView player = new AnimationView(document.getFileContent());
@@ -334,6 +337,16 @@ public final class MainWindow {
         playerPreviews.add(preview);
         preview.show();
         player.play();
+    }
+
+    void showStateMachines() {
+        if (closed || workspace.getActiveDocument() == null) return;
+        canvasView.pausePlayback();
+        setCanvasContent(stateMachineView);
+    }
+
+    boolean isStateMachineShowing() {
+        return canvasSlot.getChildren().contains(stateMachineView);
     }
 
     private void closePlayerPreviews() {

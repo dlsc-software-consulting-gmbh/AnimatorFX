@@ -56,6 +56,7 @@ animations it creates inside JavaFX applications.
   auto-reverse, fit modes, auto-play, CSS styleable.
 - `AnimationPlayer`, the non-visual controller behind it, usable on its own.
 - Markers: named time ranges that can be played by name.
+- Marker-based state machines: named events and completion transitions drive interactive playback.
 - Slots, in two modes: *embedded* (your node lives inside the animation) and *in place* (your
   node stays in your layout and is moved, scaled, rotated and faded by the animation).
 - Named live elements: interact with authored content and override its text, fill or visibility
@@ -76,6 +77,7 @@ animations it creates inside JavaFX applications.
 
 - Canvas with select, shape, pen, text, image and slot tools, snapping, zoom and pan.
 - Timeline with a layer tree, keyframes, markers, in/out bars and a scrubbing playhead.
+- State-machine graph with draggable states, transitions and undoable editing.
 - Sound: import of audio files, audio rows with waveforms and editable volume graphs, a cue lane,
   audible playback and scrubbing, a mute switch.
 - Video import, reusable assets, rectangular canvas editing, inspector controls and clip bars.
@@ -174,6 +176,17 @@ using `AnimationView.getElement()`. Click the animated circle to change its fill
 toggle the sparkle's visibility, and reset the overrides to the authored values. See
 `LiveElementsDemo` for the application code.
 
+The **State machine demo** loads the `download` machine from
+`samples/animations/download-workflow.afx`. **Start** begins connecting, then downloading.
+**Pause**, **Resume**, **Simulate Failure**, **Retry**, and **Reset** send events; resuming
+restarts the progress animation. The display shows the current state and last transition,
+including automatic transitions when an animation finishes. See `StateMachineDemo` for the
+Java code that loads the machine and sends events.
+
+To explore the same machine in the editor, open `samples/animations/download-workflow.afx` and choose
+**View → State Machines**. Select the states and arrows to inspect their markers and transitions;
+the triangle marks the initial state. Each state uses its own named timeline marker and visual.
+
 ![The sample application](docs/images/sample-app.png)
 
 `samples/animatorfx-sample-app` is a plain JavaFX window (Modena, no AtlantaFX) that depends on
@@ -191,6 +204,8 @@ views when the window closes. It plays the files of `samples/animations`:
 | `orbit.afx` | Two shapes following motion paths, oriented to the path, with trimmed trails and a blurred glow |
 | `attention.afx` | A single slot that wiggles, with a cue that ticks when it starts; used to animate an ordinary button in place |
 | `live-elements.afx` | Named visual layers for the interactive lookup and manipulation demo |
+| `state-machine.afx` | An editable `idle` → `working` → `done` state machine |
+| `download-workflow.afx` | Six distinct states and event/completion transitions used by the interactive demo |
 
 ![Frames of loader.afx](docs/images/sample-loader.png)
 ![Frames of success.afx](docs/images/sample-success.png)
@@ -363,6 +378,43 @@ view.playMarker("intro");
 view.getPlayer().setOnFinished(event -> view.playMarker("success"));
 view.getPlayer().setOnMarkerReached(marker -> System.out.println("reached " + marker.name()));
 ```
+
+### State machines
+
+A `StateMachine` maps states to marker ranges and transitions to named application events.
+States play once or loop; a non-looping state can also transition when its marker finishes.
+
+```java
+StateMachine machine = new StateMachine("button", "idle",
+        List.of(new StateMachine.State("idle", "idle", true, 0, 0),
+                new StateMachine.State("loading", "loading", false, 200, 0),
+                new StateMachine.State("success", "success", false, 400, 0)),
+        List.of(new StateMachine.Transition("idle", "loading", "click"),
+                new StateMachine.Transition("loading", "success", null)));
+StateMachineController controller = new StateMachineController(view.getPlayer(), machine);
+controller.start();
+controller.send("click");
+// When finished with the controller:
+controller.stop();
+```
+
+Author a graph under **View → State Machines** after creating markers. Add states, set their
+markers and looping behavior, then add event or completion transitions. Drag states to arrange
+the graph; edits support undo and redo. **Canvas** returns to the animation.
+
+To run a machine authored in the editor, retrieve it from the loaded document:
+
+```java
+StateMachine machine = view.getAnimation().animation().stateMachines().stream()
+        .filter(m -> m.name().equals("button")).findFirst().orElseThrow();
+StateMachineController controller = new StateMachineController(view.getPlayer(), machine);
+controller.start();
+controller.send("click");
+```
+
+Event transitions interrupt immediately; unrecognized events are ignored. The controller validates
+marker ranges on start and owns playback while active. Stop it before controlling playback directly;
+replacing the animation stops it. Existing `onFinished` handlers remain in place.
 
 ### Slots
 
@@ -832,9 +884,8 @@ assets/<id>.<ext>  images, fonts, sounds and original MP4/M4V videos
 
 - `animation.json` is UTF-8, pretty-printed with a stable key order, so unzipped files diff
   cleanly. Equal documents give byte-identical archives.
-- `formatVersion` is `3`, adding assets of kind `video` and layers of type `video`.
-  Version 2 added audio assets/layers and `cues`. Versions 1 and 2 still load; older readers
-  reject version 3 through the unsupported-version error.
+- `formatVersion` is `4`, adding optional state machines. Version 3 added video and version 2
+  added audio. Versions 1–3 still load; older readers reject version 4.
 - The reader also accepts a bare `animation.json` when the document has no assets. The editor
   always writes zips: *Save* on a document that was opened from a file that is no `.afx` asks
   for an `.afx` file instead of replacing the source. *Save As* adds `.afx` to a name that does
@@ -859,7 +910,7 @@ A complete document, a dot that swells and shrinks:
 
 ```json
 {
-  "formatVersion": 3,
+  "formatVersion": 4,
   "name": "pulse",
   "width": 120,
   "height": 120,
@@ -900,7 +951,7 @@ asset's `path`, so this document needs the zip form.
 
 ```json
 {
-  "formatVersion": 3,
+  "formatVersion": 4,
   "name": "jingle",
   "width": 120,
   "height": 120,
@@ -1020,7 +1071,7 @@ How a document is laid out in Lottie:
 - **The background colour** goes into the manifest of the dotLottie archive; plain Lottie JSON has
   no place for it.
 
-Not exported: slots, glow, the spread of a drop shadow, skew along y, the balance and looping of a
+Not exported: state machines, slots, glow, the spread of a drop shadow, skew along y, the balance and looping of a
 sound, font files, animated or gradient text colours. Paths and paints whose structure changes
 between keyframes (another number of points or colours) are written without animation. Text is
 placed by an estimated baseline, as it is on import.
@@ -1034,7 +1085,6 @@ Out of scope by design:
 
 - Expressions or scripting inside animations.
 - Recording, editing or processing sound (effects, per-channel mixing beyond balance).
-- State machines and input-driven animations.
 - Export to GIF or video.
 - 3D transforms.
 - Collaboration and cloud storage.

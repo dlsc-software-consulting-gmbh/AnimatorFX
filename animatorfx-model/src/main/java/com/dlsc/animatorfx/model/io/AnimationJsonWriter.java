@@ -20,6 +20,7 @@ import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.SoundCue;
+import com.dlsc.animatorfx.model.StateMachine;
 import com.dlsc.animatorfx.model.Stroke;
 import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
@@ -61,6 +62,34 @@ final class AnimationJsonWriter {
         if (!a.cues().isEmpty()) {
             json.put("cues", list(a.cues(), AnimationJsonWriter::cue));
         }
+        if (!a.stateMachines().isEmpty()) {
+            json.put("stateMachines", list(a.stateMachines(), AnimationJsonWriter::stateMachine));
+        }
+        return json;
+    }
+
+    private static Map<String, Object> stateMachine(StateMachine machine) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("name", machine.name());
+        json.put("initialState", machine.initialState());
+        json.put("states", list(machine.states(), state -> {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("name", state.name());
+            value.put("marker", state.marker());
+            put(value, "loop", state.loop(), false);
+            value.put("x", state.x());
+            value.put("y", state.y());
+            return value;
+        }));
+        json.put("transitions", list(machine.transitions(), transition -> {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("source", transition.source());
+            value.put("target", transition.target());
+            if (transition.event() != null) {
+                value.put("event", transition.event());
+            }
+            return value;
+        }));
         return json;
     }
 

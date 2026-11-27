@@ -61,7 +61,7 @@ public final class AnimationJson {
      * Brings a document tree of an older format version to {@link Animation#CURRENT_FORMAT}.
      */
     static Map<String, Object> migrate(Map<String, Object> json, int fromVersion) {
-        // Versions 2 (audio) and 3 (video) only add optional types and members.
+        // Versions 2 (audio), 3 (video), and 4 (state machines) add optional members.
         return json;
     }
 }

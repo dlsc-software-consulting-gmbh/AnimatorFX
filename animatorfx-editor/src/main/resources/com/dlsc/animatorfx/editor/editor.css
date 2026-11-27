@@ -90,6 +90,51 @@
     -fx-background-color: -afx-bg;
 }
 
+.state-machine-view, .state-machine-inspector {
+    -fx-background-color: -afx-panel;
+}
+
+.state-machine-graph {
+    -fx-background-color: -afx-canvas;
+}
+
+.state-machine-node {
+    -fx-background-color: -afx-panel-alt;
+    -fx-border-color: -afx-line;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8;
+    -fx-cursor: hand;
+}
+
+.state-machine-node:selected {
+    -fx-border-color: -afx-accent;
+    -fx-border-width: 2;
+}
+
+.state-machine-edge-line {
+    -fx-fill: transparent;
+    -fx-stroke: -afx-muted;
+    -fx-stroke-width: 2;
+}
+
+.state-machine-edge-arrow, .state-machine-edge-label {
+    -fx-fill: -afx-fg;
+}
+
+.state-machine-edge:selected .state-machine-edge-line {
+    -fx-stroke: -afx-accent;
+}
+
+.state-machine-edge:selected .state-machine-edge-arrow,
+.state-machine-edge:selected .state-machine-edge-label {
+    -fx-fill: -afx-accent;
+}
+
+.state-machine-message {
+    -fx-text-fill: -afx-muted;
+}
+
 .info-center-view {
     -fx-control-inner-background: -afx-panel;
     -fx-control-inner-background-alt: -afx-panel-alt;

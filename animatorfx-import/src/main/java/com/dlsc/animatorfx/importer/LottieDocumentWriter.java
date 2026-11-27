@@ -134,6 +134,9 @@ final class LottieDocumentWriter {
     }
 
     Map<String, Object> document() {
+        if (!animation.stateMachines().isEmpty()) {
+            warnings.once("State machines have no counterpart in Lottie and were omitted");
+        }
         List<Map<String, Object>> layers = new ArrayList<>();
         Context root = new Context(null, ONE, 0, duration, true, List.of(), null, List.of(), false);
         children(animation.layers(), root, layers);

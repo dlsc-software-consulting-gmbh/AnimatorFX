@@ -4,6 +4,7 @@ import com.dlsc.animatorfx.editor.doc.Command;
 import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Marker;
+import com.dlsc.animatorfx.model.StateMachine;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -77,8 +78,19 @@ public final class Markers {
 
     /** Renames a marker; does nothing when the new name is not allowed. */
     public static Command rename(String name, String newName) {
-        return Commands.setDocument("Rename Marker", a -> nameError(a, newName, name).isPresent() ? a
-                : replace(a, name, m -> new Marker(newName, m.start(), m.end())));
+        return Commands.setDocument("Rename Marker", a -> {
+            if (nameError(a, newName, name).isPresent() || a.marker(name).isEmpty()) {
+                return a;
+            }
+            Animation renamed = replace(a, name, m -> new Marker(newName, m.start(), m.end()));
+            List<StateMachine> machines = a.stateMachines().stream()
+                    .map(machine -> new StateMachine(machine.name(), machine.initialState(),
+                            machine.states().stream().map(state -> state.marker().equals(name)
+                                    ? new StateMachine.State(state.name(), newName, state.loop(), state.x(), state.y())
+                                    : state).toList(), machine.transitions()))
+                    .toList();
+            return renamed.withStateMachines(machines);
+        });
     }
 
     /** Sets the range of a marker, limited as in {@link #limited}. */

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.dlsc.animatorfx.model.Animation;
 import com.dlsc.animatorfx.model.Marker;
+import com.dlsc.animatorfx.model.StateMachine;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +32,23 @@ class MarkersTest {
         assertTrue(Markers.nameError(doc, " ", "intro").isPresent());
         assertSame(doc, Markers.rename("intro", "marker1").apply(doc));
         assertEquals("outro", Markers.rename("intro", "outro").apply(doc).markers().get(0).name());
+    }
+
+    @Test
+    void renamingAMarkerUpdatesStateReferencesAcrossMachines() {
+        StateMachine first = new StateMachine("first", "idle",
+                List.of(new StateMachine.State("idle", "intro", true, 1, 2),
+                        new StateMachine.State("busy", "marker1", false, 3, 4)), List.of());
+        StateMachine second = new StateMachine("second", "initial",
+                List.of(new StateMachine.State("initial", "intro", false, 5, 6)), List.of());
+        Animation before = doc.withStateMachines(List.of(first, second));
+        Animation after = Markers.rename("intro", "outro").apply(before);
+
+        assertEquals("outro", after.stateMachines().get(0).states().get(0).marker());
+        assertEquals("marker1", after.stateMachines().get(0).states().get(1).marker());
+        assertEquals("outro", after.stateMachines().get(1).states().get(0).marker());
+        after.stateMachines().forEach(machine -> machine.validateMarkers(after));
+        assertSame(before, Markers.rename("missing", "outro").apply(before));
     }
 
     @Test

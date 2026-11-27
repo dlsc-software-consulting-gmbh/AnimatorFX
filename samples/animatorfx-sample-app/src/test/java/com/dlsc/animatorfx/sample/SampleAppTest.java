@@ -5,6 +5,7 @@ import com.dlsc.animatorfx.player.AnimationView;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Group;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ChoiceBox;
@@ -84,6 +85,145 @@ class SampleAppTest {
             assertEquals("loader", browser.getList().getSelectionModel().getSelectedItem());
             assertSame(browser.getShowcase("loader"), browser.getCenter());
         });
+    }
+
+    @Test
+    void stateMachineDemoShowsEventsInterruptionsAndAutomaticTransitions() throws Exception {
+        Stage dialog = Fx.call(() -> {
+            lookup(browser, "#open-state-machine-demo", Button.class).fire();
+            return Window.getWindows().stream().filter(window -> window instanceof Stage
+                    && window != stage && ((Stage) window).getOwner() == stage)
+                    .map(Stage.class::cast).findFirst().orElseThrow();
+        });
+        AnimationView view = Fx.call(() -> lookup(dialog.getScene().getRoot(),
+                "#state-machine-view", AnimationView.class));
+        try {
+            Fx.run(() -> {
+                Parent root = dialog.getScene().getRoot();
+                assertEquals(Samples.load("download-workflow").animation(), view.getAnimation().animation());
+                assertEquals("download", view.getAnimation().animation().stateMachines().getFirst().name());
+                Label state = lookup(root, "#machine-state", Label.class);
+                assertEquals("State: ready", state.getText());
+                assertTrue(lookup(root, "#machine-pause", Button.class).isDisabled());
+                assertFalse(lookup(root, "#machine-start", Button.class).isDisabled());
+                assertEquals(AnimationPlayer.INDEFINITE, view.getCycleCount());
+                lookup(root, "#machine-start", Button.class).fire();
+                assertEquals("State: connecting", state.getText());
+                assertEquals("connecting", view.getPlayer().getActiveMarker());
+                assertEquals("Last transition: ready --start--> connecting",
+                        lookup(root, "#machine-transition", Label.class).getText());
+                lookup(root, "#machine-fail", Button.class).fire();
+                assertEquals("State: failed", state.getText());
+                lookup(root, "#machine-retry", Button.class).fire();
+                assertEquals("State: connecting", state.getText());
+                view.setRate(8);
+            });
+            await(() -> "State: downloading".equals(lookup(dialog.getScene().getRoot(),
+                    "#machine-state", Label.class).getText()));
+            Fx.run(() -> {
+                Parent root = dialog.getScene().getRoot();
+                assertEquals("Last transition: connecting --finished--> downloading",
+                        lookup(root, "#machine-transition", Label.class).getText());
+                assertFalse(lookup(root, "#machine-pause", Button.class).isDisabled());
+                lookup(root, "#machine-pause", Button.class).fire();
+                assertEquals("State: paused", lookup(root, "#machine-state", Label.class).getText());
+                assertEquals("paused", view.getPlayer().getActiveMarker());
+                lookup(root, "#machine-resume", Button.class).fire();
+                assertEquals("State: downloading", lookup(root, "#machine-state", Label.class).getText());
+                assertEquals("Last transition: paused --resume--> downloading",
+                        lookup(root, "#machine-transition", Label.class).getText());
+                view.setRate(16);
+            });
+            await(() -> "State: complete".equals(lookup(dialog.getScene().getRoot(),
+                    "#machine-state", Label.class).getText()));
+            Fx.run(() -> {
+                assertEquals("complete", view.getPlayer().getActiveMarker());
+                assertEquals(AnimationPlayer.INDEFINITE, view.getCycleCount());
+                assertEquals(AnimationPlayer.Status.PLAYING, view.getStatus());
+                assertEquals("Last transition: downloading --finished--> complete",
+                        lookup(dialog.getScene().getRoot(), "#machine-transition", Label.class).getText());
+                lookup(dialog.getScene().getRoot(), "#machine-reset", Button.class).fire();
+                assertEquals("State: ready", lookup(dialog.getScene().getRoot(),
+                        "#machine-state", Label.class).getText());
+            });
+        } finally {
+            Fx.run(dialog::close);
+        }
+        Fx.run(() -> {
+            assertEquals(AnimationPlayer.Status.STOPPED, view.getStatus());
+            lookup(dialog.getScene().getRoot(), "#machine-start", Button.class).fire();
+            assertEquals("State: ready", lookup(dialog.getScene().getRoot(),
+                    "#machine-state", Label.class).getText());
+        });
+    }
+
+    @Test
+    void stateMachineDemoHoldsTheReadyStateUntilAnEvent() throws Exception {
+        Stage dialog = Fx.call(() -> {
+            lookup(browser, "#open-state-machine-demo", Button.class).fire();
+            return Window.getWindows().stream().filter(window -> window instanceof Stage
+                    && window != stage && ((Stage) window).getOwner() == stage)
+                    .map(Stage.class::cast).findFirst().orElseThrow();
+        });
+        try {
+            AnimationView view = Fx.call(() -> lookup(dialog.getScene().getRoot(),
+                    "#state-machine-view", AnimationView.class));
+            int[] wraps = {0};
+            double[] highest = {Double.NEGATIVE_INFINITY};
+            Fx.run(() -> {
+                view.currentTimeProperty().addListener((observable, old, time) -> {
+                    highest[0] = Math.max(highest[0], time.doubleValue());
+                    if (time.doubleValue() < old.doubleValue()) wraps[0]++;
+                });
+                view.setRate(8);
+            });
+            await(() -> wraps[0] >= 3);
+            Fx.run(() -> {
+                assertEquals("State: ready", lookup(dialog.getScene().getRoot(), "#machine-state", Label.class).getText());
+                assertEquals("ready", view.getPlayer().getActiveMarker());
+                assertTrue(highest[0] < 1.2, "ready playback escaped its marker");
+            });
+        } finally {
+            Fx.run(dialog::close);
+        }
+    }
+
+    @Test
+    void downloadWorkflowRendersDistinctImagesForEachState() throws Exception {
+        var animation = Samples.load("download-workflow");
+        AnimationView view = Fx.call(() -> new AnimationView(animation));
+        Stage preview = Fx.call(() -> {
+            Stage window = new Stage();
+            window.setScene(new Scene(new StackPane(view), 600, 360));
+            window.show();
+            return window;
+        });
+        Path screenshots = Fx.screenshots();
+        if (screenshots != null) Files.createDirectories(screenshots);
+        Set<Integer> images = new HashSet<>();
+        try {
+            for (var marker : animation.animation().markers()) {
+                WritableImage image = Fx.call(() -> {
+                    view.seek((marker.start() + marker.end()) / 2);
+                    preview.getScene().getRoot().applyCss();
+                    preview.getScene().getRoot().layout();
+                    return Fx.snapshot(preview.getScene().getRoot(), Color.TRANSPARENT);
+                });
+                int hash = 1;
+                for (int y = 0; y < (int) image.getHeight(); y += 3) {
+                    for (int x = 0; x < (int) image.getWidth(); x += 3) {
+                        hash = 31 * hash + image.getPixelReader().getArgb(x, y);
+                    }
+                }
+                assertTrue(images.add(hash), "duplicate image for " + marker.name());
+                if (screenshots != null) Fx.writePng(image, screenshots.resolve("download-" + marker.name() + ".png"));
+            }
+        } finally {
+            Fx.run(() -> {
+                view.dispose();
+                preview.close();
+            });
+        }
     }
 
     @Test

@@ -15,6 +15,7 @@ import com.dlsc.animatorfx.model.Rgba;
 import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.SoundCue;
+import com.dlsc.animatorfx.model.StateMachine;
 import com.dlsc.animatorfx.model.TextLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Vec2;
@@ -61,6 +62,36 @@ class AnimationJsonTest {
         Animation a = KitchenSink.animation();
 
         assertEquals(a, AnimationJson.fromJson(AnimationJson.toJson(a)));
+    }
+
+    @Test
+    void stateMachinesSurviveRoundTripAndDocumentEdits() throws Exception {
+        StateMachine machine = new StateMachine("button", "idle",
+                List.of(new StateMachine.State("idle", "idle", true, 12, 34),
+                        new StateMachine.State("busy", "busy", false, 150, 40)),
+                List.of(new StateMachine.Transition("idle", "busy", "click"),
+                        new StateMachine.Transition("busy", "idle", null)));
+        Animation animation = Animation.create("button", 100, 100, 2)
+                .withMarkers(List.of(new com.dlsc.animatorfx.model.Marker("idle", 0, 1),
+                        new com.dlsc.animatorfx.model.Marker("busy", 1, 2)))
+                .withStateMachines(List.of(machine)).withName("renamed").withDuration(3);
+
+        assertEquals(animation, AnimationJson.fromJson(AnimationJson.toJson(animation)));
+        assertEquals(List.of(machine), animation.stateMachines());
+    }
+
+    @Test
+    void oldDocumentsHaveNoStateMachines() throws Exception {
+        assertTrue(parse(doc("\"layers\":[]")).stateMachines().isEmpty());
+    }
+
+    @Test
+    void invalidStateMachinesReportTheirLocation() {
+        assertRejected("stateMachines[0]", doc("""
+                "layers":[],
+                "stateMachines":[{"name":"button","initialState":"idle",
+                  "states":[{"name":"idle","marker":""}]}]
+                """));
     }
 
     @Test
@@ -172,7 +203,7 @@ class AnimationJsonTest {
 
         assertEquals("""
                 {
-                  "formatVersion": 3,
+                  "formatVersion": 4,
                   "width": 100,
                   "height": 50,
                   "duration": 3,
@@ -217,7 +248,8 @@ class AnimationJsonTest {
 
     @Test
     void newerFormatVersionIsRejected() {
-        assertRejected("formatVersion", "{\"formatVersion\":4,\"width\":1,\"height\":1,\"duration\":1}");
+        assertRejected("formatVersion", "{\"formatVersion\":" + (Animation.CURRENT_FORMAT + 1)
+                + ",\"width\":1,\"height\":1,\"duration\":1}");
         assertRejected("formatVersion", "{\"formatVersion\":0,\"width\":1,\"height\":1,\"duration\":1}");
         assertRejected("formatVersion", "{\"formatVersion\":1.5,\"width\":1,\"height\":1,\"duration\":1}");
         assertRejected("formatVersion", "{\"formatVersion\":\"1\",\"width\":1,\"height\":1,\"duration\":1}");
@@ -446,7 +478,7 @@ class AnimationJsonTest {
 
         assertEquals("""
                 {
-                  "formatVersion": 3,
+                  "formatVersion": 4,
                   "width": 100,
                   "height": 50,
                   "duration": 3,
