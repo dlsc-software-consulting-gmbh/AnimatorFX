@@ -304,6 +304,8 @@ final class MenuBarFactory {
 
     private Menu viewMenu() {
         CanvasView canvas = window.getCanvasView();
+        MenuItem preview = item("menu-view-preview-player", "Preview in Player…", null, window::showPlayerPreview);
+        preview.disableProperty().bind(workspace.activeDocumentProperty().isNull());
         Theme theme = window.getTheme();
         ToggleGroup group = new ToggleGroup();
         Menu themes = new Menu("Theme");
@@ -346,6 +348,7 @@ final class MenuBarFactory {
         Menu menu = new Menu("View");
         menu.setId("menu-view");
         menu.getItems().addAll(
+                preview, new SeparatorMenuItem(),
                 item("menu-view-zoom-in", "Zoom In", shortcut(KeyCode.PLUS), canvas::zoomIn),
                 item("menu-view-zoom-out", "Zoom Out", shortcut(KeyCode.MINUS), canvas::zoomOut),
                 item("menu-view-zoom-fit", "Zoom to Fit", shortcut(KeyCode.DIGIT0), canvas::zoomToFit),

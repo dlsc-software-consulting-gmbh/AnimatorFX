@@ -7,7 +7,9 @@ import com.dlsc.animatorfx.editor.session.RecoveryStore;
 import com.dlsc.animatorfx.editor.session.SessionState;
 import com.dlsc.animatorfx.editor.session.SessionStore;
 import com.dlsc.animatorfx.model.Animatable;
+import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.Geometry;
+import com.dlsc.animatorfx.model.ImageLayer;
 import com.dlsc.animatorfx.model.LayerBase;
 import com.dlsc.animatorfx.model.Paint;
 import com.dlsc.animatorfx.model.Rgba;
@@ -15,6 +17,8 @@ import com.dlsc.animatorfx.model.ShapeLayer;
 import com.dlsc.animatorfx.model.SlotLayer;
 import com.dlsc.animatorfx.model.Transform;
 import com.dlsc.animatorfx.model.Vec2;
+import com.dlsc.animatorfx.player.AnimationPlayer;
+import com.dlsc.animatorfx.player.AnimationView;
 import javafx.application.ColorScheme;
 import javafx.event.Event;
 import javafx.geometry.Bounds;
@@ -26,8 +30,10 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HeaderBar;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.stage.Window;
 import javafx.stage.WindowEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -59,6 +65,94 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Smoke tests of the shell under the headless toolkit. Every window uses a temporary configuration directory.
  */
 class MainWindowTest {
+
+    @Test
+    void playerPreviewLoopsAnUnsavedSnapshotWithItsAssetsWithoutMovingTheEditorPlayhead() throws Exception {
+        MainWindow window = start();
+        byte[] image;
+        try (var input = MainWindow.class.getResourceAsStream("/com/dlsc/animatorfx/editor/app-icon.png")) {
+            image = input.readAllBytes();
+        }
+        run(() -> {
+            EditorDocument document = window.getWorkspace().getActiveDocument();
+            document.addAsset(new Asset("logo", Asset.Kind.IMAGE, "assets/logo.png", "Logo"), image);
+            document.execute(Commands.addLayer(null, 0,
+                    new ImageLayer(LayerBase.create("Logo", 3).withId("logo-layer"), "logo", 40, 40)));
+            document.setPlayhead(1.5);
+            window.getToolBar().mutedProperty().set(true);
+            var snapshot = document.getFileContent();
+
+            window.menuItem("menu-view-preview-player").fire();
+
+            Stage preview = playerPreviewStages(window).getFirst();
+            AnimationView player = (AnimationView) preview.getScene().lookup(".animation-view");
+            assertTrue(preview.isShowing());
+            assertTrue(preview.isResizable());
+            assertEquals(Modality.NONE, preview.getModality());
+            assertEquals(snapshot, player.getAnimation());
+            assertArrayEquals(image, player.getAnimation().assets().get("logo"));
+            assertEquals(AnimationPlayer.INDEFINITE, player.getCycleCount());
+            assertEquals(AnimationPlayer.Status.PLAYING, player.getStatus());
+            assertEquals(0, player.getCurrentTime());
+            assertTrue(player.isMuted());
+            assertEquals(1.5, document.getPlayhead());
+            window.getToolBar().mutedProperty().set(false);
+            assertFalse(player.isMuted());
+
+            document.execute(Commands.addLayer(null, 1, rect("later")));
+            assertEquals(snapshot, player.getAnimation(), "Edits must not change an open preview");
+            preview.close();
+            assertEquals(AnimationPlayer.Status.STOPPED, player.getStatus());
+            assertFalse(player.mutedProperty().isBound());
+
+            window.menuItem("menu-view-preview-player").fire();
+            Stage reopened = playerPreviewStages(window).getFirst();
+            AnimationView updated = (AnimationView) reopened.getScene().lookup(".animation-view");
+            assertEquals(document.getFileContent(), updated.getAnimation());
+            assertEquals(2, updated.getAnimation().animation().layers().size());
+        });
+    }
+
+    @Test
+    void playerPreviewIsUnavailableWithoutAnActiveDocument() {
+        MainWindow window = start();
+        run(() -> {
+            MenuItem preview = window.menuItem("menu-view-preview-player");
+            assertFalse(preview.isDisable());
+            EditorDocument document = window.getWorkspace().getActiveDocument();
+            window.getWorkspace().remove(document);
+            assertTrue(preview.isDisable());
+            preview.fire();
+            assertTrue(playerPreviewStages(window).isEmpty());
+            window.getWorkspace().add(document);
+            assertFalse(preview.isDisable());
+        });
+    }
+
+    @Test
+    void shuttingDownTheEditorClosesAndStopsAllPlayerPreviews() {
+        MainWindow window = start();
+        run(() -> {
+            window.menuItem("menu-view-preview-player").fire();
+            window.menuItem("menu-view-preview-player").fire();
+            List<Stage> previews = playerPreviewStages(window);
+            assertEquals(2, previews.size());
+            List<AnimationView> players = previews.stream()
+                    .map(stage -> (AnimationView) stage.getScene().lookup(".animation-view")).toList();
+            window.shutdown();
+            assertTrue(playerPreviewStages(window).isEmpty());
+            for (AnimationView player : players) {
+                assertEquals(AnimationPlayer.Status.STOPPED, player.getStatus());
+                assertFalse(player.mutedProperty().isBound());
+            }
+        });
+    }
+
+    private static List<Stage> playerPreviewStages(MainWindow window) {
+        return Window.getWindows().stream().filter(Stage.class::isInstance).map(Stage.class::cast)
+                .filter(stage -> stage.getOwner() == window.getStage()
+                        && stage.getScene().lookup(".animation-view") instanceof AnimationView).toList();
+    }
 
     @Test
     void theWindowHasAReadableApplicationIcon() {

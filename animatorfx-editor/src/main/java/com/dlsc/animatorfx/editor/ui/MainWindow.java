@@ -19,6 +19,8 @@ import com.dlsc.animatorfx.editor.session.AppDirs;
 import com.dlsc.animatorfx.editor.session.SessionState.Layout;
 import com.dlsc.animatorfx.editor.session.SessionStore;
 import com.dlsc.animatorfx.editor.timeline.TimelineView;
+import com.dlsc.animatorfx.player.AnimationPlayer;
+import com.dlsc.animatorfx.player.AnimationView;
 import com.dlsc.gemsfx.DialogPane;
 import javafx.application.ColorScheme;
 import javafx.application.Platform;
@@ -46,6 +48,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HeaderBar;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.WindowEvent;
@@ -54,6 +57,7 @@ import java.io.File;
 import java.io.UncheckedIOException;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -107,6 +111,7 @@ public final class MainWindow {
     private final BooleanProperty sidePanelVisible = new SimpleBooleanProperty(this, "sidePanelVisible", true);
     private final BooleanProperty timelineVisible = new SimpleBooleanProperty(this, "timelineVisible", true);
     private final MenuBar menuBar;
+    private final List<Stage> playerPreviews = new ArrayList<>();
     private final Scene scene;
     private final SessionController session;
     private final Path aiSettings;
@@ -289,9 +294,51 @@ public final class MainWindow {
             return false;
         }
         closed = true;
-        runShutdownSteps(List.of(aiGenerationHistory::dispose, aiActions::dispose, aiChat::dispose,
+        runShutdownSteps(List.of(this::closePlayerPreviews,
+                aiGenerationHistory::dispose, aiActions::dispose, aiChat::dispose,
                 canvasView::dispose, theme::dispose));
         return true;
+    }
+
+    void showPlayerPreview() {
+        EditorDocument document = workspace.getActiveDocument();
+        if (closed || document == null) {
+            return;
+        }
+        canvasView.pausePlayback();
+        SoundPreview.shared().stop();
+        AnimationView player = new AnimationView(document.getFileContent());
+        player.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        player.setCycleCount(AnimationPlayer.INDEFINITE);
+        player.mutedProperty().bind(toolBar.mutedProperty());
+
+        Stage preview = new Stage();
+        preview.initOwner(stage);
+        preview.setTitle(document.getTitle() + " - Player Preview");
+        preview.getIcons().addAll(stage.getIcons());
+        var screens = Screen.getScreensForRectangle(stage.getX(), stage.getY(),
+                stage.getWidth(), stage.getHeight());
+        var bounds = (screens.isEmpty() ? Screen.getPrimary() : screens.getFirst()).getVisualBounds();
+        var animation = document.getAnimation();
+        Scene previewScene = new Scene(new StackPane(player),
+                Math.min(animation.width(), bounds.getWidth() * .8),
+                Math.min(animation.height(), bounds.getHeight() * .8));
+        preview.setScene(previewScene);
+        preview.setOnHidden(event -> {
+            player.stop();
+            player.mutedProperty().unbind();
+            player.dispose();
+            playerPreviews.remove(preview);
+        });
+        playerPreviews.add(preview);
+        preview.show();
+        player.play();
+    }
+
+    private void closePlayerPreviews() {
+        for (Stage preview : List.copyOf(playerPreviews)) {
+            preview.close();
+        }
     }
 
     private static void runShutdownSteps(List<Runnable> steps) {
