@@ -6,6 +6,7 @@ import com.dlsc.animatorfx.editor.doc.Commands;
 import com.dlsc.animatorfx.editor.ui.EditorUiTest;
 import com.dlsc.animatorfx.model.Asset;
 import com.dlsc.animatorfx.model.AudioLayer;
+import com.dlsc.animatorfx.model.io.AnimationIO;
 import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
@@ -55,6 +56,118 @@ class AudioTimelineTest extends EditorUiTest {
 
     private Node cell() {
         return fx(() -> timeline.getLayerColumn().layerCell("a").orElseThrow());
+    }
+
+    private void editVolume() {
+        run(() -> tracks.getAudioMenu("a").getItems().getFirst().fire());
+        layout();
+    }
+
+    private double volumeY(double value) {
+        return fx(() -> timeline.rowTop(tracks.rowOf("a")) + 3.5 + (1 - value) * 14);
+    }
+
+    @Test
+    void clickingTheVolumeGraphAddsAnUndoablePersistedEnvelopeWithoutMovingTheClip() throws Exception {
+        editVolume();
+        click(tracks, x(1), volumeY(.25));
+
+        assertEquals(3, audio().volume().keyframes().size());
+        assertEquals(1, audio().volume().at(.5), 1e-9);
+        assertEquals(.25, audio().volume().at(1), 1e-9);
+        assertEquals(.625, audio().volume().at(.75), 1e-9);
+        assertEquals(1, audio().volume().at(2.5), 1e-9);
+        assertEquals(.5, audio().base().inPoint());
+        assertEquals(2.5, audio().base().outPoint());
+        assertFalse(doc.isAutoKey(), "Graph editing must create points without requiring auto-key");
+        java.nio.file.Path file = dir.resolve("volume.afx");
+        run(() -> {
+            try {
+                AnimationIO.write(doc.getFileContent(), file);
+            } catch (java.io.IOException error) {
+                throw new java.io.UncheckedIOException(error);
+            }
+        });
+        assertEquals(doc.getAnimation(), AnimationIO.read(file).animation());
+        run(doc::undo);
+        assertFalse(audio().volume().isAnimated());
+        assertEquals(1, audio().volume().at(1), 1e-9);
+    }
+
+    @Test
+    void volumePointsMoveInTimeAndValueAndCanBeDeletedWithoutChangingOtherPoints() {
+        editVolume();
+        click(tracks, x(1), volumeY(.25));
+        String id = audio().volume().keyframes().get(1).id();
+        drag(tracks, x(1), volumeY(.25), x(1.25), volumeY(.75));
+
+        assertEquals(id, audio().volume().keyframes().get(1).id());
+        assertEquals(.75, audio().volume().at(1.25), 1e-9);
+        assertEquals(1, audio().volume().at(.5), 1e-9);
+        run(doc::undo);
+        assertEquals(.25, audio().volume().at(1), 1e-9);
+        click(tracks, x(1), volumeY(.25));
+        key(KeyCode.DELETE);
+        assertEquals(2, audio().volume().keyframes().size());
+        assertEquals(1, audio().volume().at(1), 1e-9);
+    }
+
+    @Test
+    void escapingAVolumePointDragRestoresItsValueAndLockedTracksCannotBeEdited() {
+        editVolume();
+        click(tracks, x(1), volumeY(.25));
+        var before = audio().volume();
+        press(tracks, x(1), volumeY(.25), Keys.NONE);
+        dragTo(tracks, x(1.25), volumeY(.75), Keys.NONE);
+        key(KeyCode.ESCAPE);
+        release(tracks, x(1.25), volumeY(.75), Keys.NONE);
+        assertEquals(before, audio().volume());
+
+        execute(Commands.updateLayer("Lock Layer", "a", l -> l.withBase(l.base().withLocked(true))));
+        click(tracks, x(1.5), volumeY(.5));
+        drag(tracks, x(1), volumeY(.25), x(1.25), volumeY(.75));
+        assertEquals(before, audio().volume());
+    }
+
+    @Test
+    void switchingDocumentsCancelsAVolumeDragInTheOriginalDocument() {
+        editVolume();
+        click(tracks, x(1), volumeY(.25));
+        var before = audio().volume();
+        press(tracks, x(1), volumeY(.25), Keys.NONE);
+        dragTo(tracks, x(1.25), volumeY(.75), Keys.NONE);
+        assertEquals(.75, audio().volume().at(1.25), 1e-9);
+
+        run(() -> window.getFileActions().newDocument());
+        layout();
+        assertEquals(before, audio().volume());
+        assertFalse(tracks.isEditingVolume("a"));
+        assertTrue(window.getWorkspace().getActiveDocument().getAnimation().layers().isEmpty());
+    }
+
+    @Test
+    void leavingVolumeEditModeRestoresTheNormalAudioBarGesture() {
+        editVolume();
+        click(tracks, x(1), volumeY(.25));
+        var envelope = audio().volume();
+        editVolume();
+
+        drag(tracks, x(1.5), y(), x(1.75), y());
+        assertEquals(.75, audio().base().inPoint(), 1e-9);
+        assertEquals(2.75, audio().base().outPoint(), 1e-9);
+        assertEquals(envelope, audio().volume());
+    }
+
+    @Test
+    void switchingDocumentsDuringAMarqueeDoesNotCopyTheOldSelection() {
+        select("r");
+        press(tracks, x(2.8), y(), Keys.NONE);
+        dragTo(tracks, x(.75), y(), Keys.NONE);
+        run(() -> window.getFileActions().newDocument());
+        layout();
+
+        assertTrue(window.getWorkspace().getActiveDocument().getSelection().layerIds().isEmpty());
+        assertEquals(java.util.List.of("r"), doc.getSelection().layerIds());
     }
 
     @Test

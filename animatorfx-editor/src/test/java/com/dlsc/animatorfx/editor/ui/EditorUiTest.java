@@ -56,6 +56,17 @@ public abstract class EditorUiTest {
 
     private static final class NoDialogs implements Dialogs {
 
+        private final java.util.function.DoubleFunction<CompletableFuture<AudioPlacement>> audioInsertion;
+
+        NoDialogs(java.util.function.DoubleFunction<CompletableFuture<AudioPlacement>> audioInsertion) {
+            this.audioInsertion = audioInsertion;
+        }
+
+        @Override
+        public CompletableFuture<AudioPlacement> chooseAudioInsertion(double cursorTime) {
+            return audioInsertion.apply(cursorTime);
+        }
+
         @Override
         public Optional<Path> chooseOpenFile(Window owner) {
             return Optional.empty();
@@ -104,6 +115,10 @@ public abstract class EditorUiTest {
     protected TimelineView timeline;
     protected EditorDocument doc;
 
+    protected CompletableFuture<Dialogs.AudioPlacement> chooseAudioInsertion(double time) {
+        return CompletableFuture.completedFuture(Dialogs.AudioPlacement.CURSOR);
+    }
+
     @BeforeAll
     public static void startToolkit() throws Exception {
         FxToolkit.registerPrimaryStage();
@@ -113,7 +128,7 @@ public abstract class EditorUiTest {
     public void openWindow() {
         window = fx(() -> {
             MainWindow w = new MainWindow(new Stage(), new SessionStore(dir.resolve("config")),
-                    new RecoveryStore(dir.resolve("config").resolve("recovery")), new NoDialogs(),
+                    new RecoveryStore(dir.resolve("config").resolve("recovery")), new NoDialogs(this::chooseAudioInsertion),
                     provider -> null, (provider, key) -> CompletableFuture.completedFuture(List.of()),
                     dir.resolve("config").resolve("ai.properties"), (provider, key) -> {}, provider -> {});
             // the headless screen is 1280 x 800

@@ -56,6 +56,38 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class InWindowDialogsTest {
 
+    @Test
+    void droppingAudioAsksForItsInsertionPositionInsideTheMainWindow() throws Exception {
+        Path sound = dir.resolve("music.wav");
+        Files.write(sound, com.dlsc.animatorfx.editor.audio.TestSounds.tone(.5, .2));
+        MainWindow window = start();
+        run(() -> window.getWorkspace().getActiveDocument().setPlayhead(1));
+        int openWindows = fx(() -> Window.getWindows().size());
+        run(() -> window.openDropped(List.of(sound.toFile())));
+        settle(window);
+        assertEquals(openWindows, fx(() -> Window.getWindows().size()));
+        assertEquals(List.of("Beginning", "Cancel", "Current Time Cursor"),
+                buttonTexts(window).stream().sorted().toList());
+        click(window, "Cancel");
+        assertTrue(fx(() -> window.getWorkspace().getActiveDocument().getAnimation().assets().isEmpty()));
+    }
+
+    @Test
+    void droppingAudioCanInsertAtTheBeginningThroughTheDialog() throws Exception {
+        Path sound = dir.resolve("music.wav");
+        Files.write(sound, com.dlsc.animatorfx.editor.audio.TestSounds.tone(.5, .2));
+        MainWindow window = start();
+        run(() -> {
+            window.getWorkspace().getActiveDocument().setPlayhead(1);
+            window.openDropped(List.of(sound.toFile()));
+        });
+        settle(window);
+        click(window, "Beginning");
+        window.getImportActions().whenAudioImported().get(5, TimeUnit.SECONDS);
+        assertEquals(0, fx(() -> window.getWorkspace().getActiveDocument()
+                .getAnimation().layers().getFirst().base().inPoint()));
+    }
+
     @TempDir
     Path dir;
 

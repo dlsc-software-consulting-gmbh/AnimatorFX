@@ -139,6 +139,24 @@ Use an **audio layer** for a clip that must follow timeline time, such as narrat
 
 The waveform is generated in the background. Compressed formats may take longer and show an approximate waveform. If you only want a reusable asset, use **Assets → Add…** instead of importing it as a layer.
 
+You can also drop audio files onto the window. Choose **Beginning** to insert at time zero,
+**Current Time Cursor** to use the playhead position when you dropped the files, or **Cancel**
+to import nothing. One choice applies to all audio files in the drop.
+If the chosen cursor is at the animation's end, the editor asks you to move it earlier or
+choose **Beginning**, rather than silently inserting the sound at zero.
+
+### Edit volume directly on the track
+
+Right-click an audio bar and enable **Edit Volume**. Click inside the bar to add a volume
+point, then drag a point horizontally to change its time or vertically to change its volume.
+The bottom is silence and the top is full volume. Points snap to animation frames; hold **Alt**
+for an unsnapped time. Select a point and press **Delete**, or right-click it for deletion and
+easing choices.
+
+Volume points are normal keyframes and are saved with the document. Auto-key need not be
+enabled, and changes support undo/redo; **Escape** cancels a point drag. Disable **Edit Volume**
+through the audio bar's context menu to resume moving and trimming the clip.
+
 ### Place a cue and preview
 
 Move the playhead and use **+** in the cue lane, then select or import a sound if prompted. Drag the cue to adjust its time; select it to edit its name, sound, or volume in the Inspector. To align a cue exactly with a marker, use the marker's **Add Cue at Marker Start** context command.

@@ -596,6 +596,7 @@ public final class TimelineView extends Region {
 
     private void documentChanged(EditorDocument oldDoc, EditorDocument newDoc) {
         tracks.cancelGesture();
+        tracks.editVolume(null);
         markerLane.cancelGesture();
         cueLane.cancelGesture();
         column.cancelGesture();

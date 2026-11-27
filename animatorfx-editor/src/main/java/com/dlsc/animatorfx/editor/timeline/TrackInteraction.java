@@ -7,6 +7,7 @@ import com.dlsc.animatorfx.editor.timeline.TimelineRow.PropertyRow;
 import com.dlsc.animatorfx.editor.timeline.TrackPane.BarPart;
 import com.dlsc.animatorfx.editor.timeline.TrackPane.Hit;
 import com.dlsc.animatorfx.model.Animation;
+import com.dlsc.animatorfx.model.Animatable;
 import com.dlsc.animatorfx.model.AudioLayer;
 import com.dlsc.animatorfx.model.VideoLayer;
 import com.dlsc.animatorfx.model.Easing;
@@ -23,6 +24,7 @@ import java.util.Set;
 import javafx.collections.ObservableList;
 import javafx.scene.Cursor;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
@@ -46,13 +48,14 @@ import javafx.scene.input.MouseEvent;
  */
 final class TrackInteraction {
 
-    private enum Mode {NONE, KEYS, BAR, MARQUEE}
+    private enum Mode {NONE, KEYS, BAR, VOLUME, MARQUEE}
 
     private static final double DRAG_THRESHOLD = 3;
 
     private final TimelineView timeline;
     private final TrackPane tracks;
     private ContextMenu keyframeMenu;
+    private ContextMenu audioMenu;
 
     private Mode mode = Mode.NONE;
     private boolean moved;
@@ -60,6 +63,8 @@ final class TrackInteraction {
     private double pressY;
     private final Object gestureKey = new Object();
     private Animation original;
+    private EditorDocument gestureDocument;
+    private Hit.Volume volumePoint;
     // keyframes
     private List<KeyframeRef> movingKeys = List.of();
     private KeyframeRef pressedKey;
@@ -94,6 +99,19 @@ final class TrackInteraction {
                     selectKeys(List.of(key.ref()), false);
                 }
                 getKeyframeMenu().show(tracks, e.getScreenX(), e.getScreenY());
+            } else if (doc() != null) {
+                Hit hit = tracks.hitAt(e.getX(), e.getY());
+                if (hit instanceof Hit.Volume point && point.key() != null) {
+                    tracks.requestFocus();
+                    selectKeys(List.of(new KeyframeRef(point.layerId(), "volume", point.key().id())), false);
+                    getKeyframeMenu().show(tracks, e.getScreenX(), e.getScreenY());
+                } else {
+                    String layerId = hit instanceof Hit.Bar bar ? bar.layerId()
+                            : hit instanceof Hit.Volume point ? point.layerId() : null;
+                    if (layerId != null && Layers.find(doc().getAnimation(), layerId).orElse(null) instanceof AudioLayer) {
+                        getAudioMenu(layerId).show(tracks, e.getScreenX(), e.getScreenY());
+                    }
+                }
             }
             e.consume();
         });
@@ -134,9 +152,11 @@ final class TrackInteraction {
         pressX = event.getX();
         pressY = event.getY();
         original = doc.getAnimation();
+        gestureDocument = doc;
         boolean add = event.isShiftDown() || event.isShortcutDown();
         switch (hit) {
             case Hit.Key key -> pressedKey(key, event, add);
+            case Hit.Volume point -> pressedVolume(point, event);
             case Hit.Bar barHit -> {
                 ObservableList<String> layers = doc.getSelection().layerIds();
                 if (add) {
@@ -157,6 +177,37 @@ final class TrackInteraction {
             case Hit.Empty empty -> pressedEmpty(empty, event, add);
         }
         event.consume();
+    }
+
+    private void pressedVolume(Hit.Volume point, MouseEvent event) {
+        doc().getSelection().layerIds().setAll(point.layerId());
+        doc().getSelection().keyframes().clear();
+        if (timeline.getKeyframeActions().isLocked(point.layerId())) return;
+        if (point.key() != null) {
+            selectKeys(List.of(new KeyframeRef(point.layerId(), "volume", point.key().id())), false);
+            volumePoint = point;
+            mode = Mode.VOLUME;
+        } else {
+            AudioLayer audio = (AudioLayer) Layers.find(original, point.layerId()).orElseThrow();
+            double time = volumeTime(audio, event.getX(), event.isAltDown());
+            Animatable<Double> value = audio.volume();
+            if (!value.isAnimated()) {
+                value = value.withKeyframe(audio.base().inPoint(), value.at(audio.base().inPoint()), Easing.LINEAR)
+                        .withKeyframe(Math.min(audio.base().outPoint(), original.duration()),
+                                audio.volume().at(audio.base().outPoint()), Easing.LINEAR);
+            }
+            value = value.withKeyframe(time, tracks.volumeAtY(point.row(), event.getY()), Easing.LINEAR);
+            doc().execute(Commands.setProperty(point.layerId(), "volume", value));
+            AudioLayer updated = (AudioLayer) Layers.find(doc().getAnimation(), point.layerId()).orElseThrow();
+            TimelineRows.keyframeAt(updated.volume(), time).ifPresent(key ->
+                    selectKeys(List.of(new KeyframeRef(point.layerId(), "volume", key.id())), false));
+        }
+    }
+
+    private double volumeTime(AudioLayer audio, double x, boolean free) {
+        double in = Math.clamp(audio.base().inPoint(), 0, original.duration());
+        double out = Math.clamp(audio.base().outPoint(), in, original.duration());
+        return Math.clamp(timeline.snapTime(timeline.getScale().toTime(x), free), in, out);
     }
 
     private void pressedKey(Hit.Key key, MouseEvent event, boolean add) {
@@ -257,6 +308,18 @@ final class TrackInteraction {
         Animation start = original;
         double frameRate = start.frameRate();
         switch (mode) {
+            case VOLUME -> {
+                AudioLayer audio = (AudioLayer) Layers.find(start, volumePoint.layerId()).orElseThrow();
+                double time = volumeTime(audio, event.getX(), free);
+                List<Keyframe<Double>> points = new ArrayList<>(audio.volume().keyframes());
+                points.removeIf(key -> key.id().equals(volumePoint.key().id())
+                        || Math.abs(key.time() - time) < Animatable.TIME_EPSILON);
+                points.add(new Keyframe<>(volumePoint.key().id(), time,
+                        tracks.volumeAtY(volumePoint.row(), event.getY()), volumePoint.key().easing()));
+                Animatable<Double> value = Animatable.keyframed(points);
+                doc.executeCoalesced(gestureKey, Commands.setDocument("Move Volume Point",
+                        current -> Commands.setProperty(audio.id(), "volume", value).apply(start)));
+            }
             case KEYS -> {
                 double target = grabTime + delta;
                 double snapped = free ? target : TimeScale.snap(target, frameRate);
@@ -415,7 +478,7 @@ final class TrackInteraction {
         if (doc == null || event.getButton() != MouseButton.PRIMARY) {
             return;
         }
-        if (moved && (mode == Mode.KEYS || mode == Mode.BAR)) {
+        if (moved && (mode == Mode.KEYS || mode == Mode.BAR || mode == Mode.VOLUME)) {
             doc.endGesture();
         } else if (!moved && mode == Mode.KEYS && collapseOnRelease && pressedKey != null) {
             selectKeys(List.of(pressedKey), false);
@@ -435,12 +498,14 @@ final class TrackInteraction {
 
     /** Abandons the gesture in progress: moved keyframes and bars return, the marquee selection is undone. */
     void cancel() {
-        EditorDocument doc = doc();
+        EditorDocument doc = gestureDocument;
         if (doc != null && moved) {
-            if (mode == Mode.KEYS || mode == Mode.BAR) {
+            if (mode == Mode.KEYS || mode == Mode.BAR || mode == Mode.VOLUME) {
                 doc.cancelGesture();
             } else if (mode == Mode.MARQUEE) {
-                timeline.getKeyframeActions().select(new LinkedHashSet<>(marqueeBaseLayers), List.copyOf(marqueeBase));
+                doc.getSelection().layerIds().setAll(marqueeBaseLayers);
+                doc.getSelection().keyframes().clear();
+                doc.getSelection().keyframes().addAll(marqueeBase);
             }
         }
         reset();
@@ -454,11 +519,29 @@ final class TrackInteraction {
         bar = null;
         slip = false;
         original = null;
+        gestureDocument = null;
+        volumePoint = null;
         movingKeys = List.of();
         timeline.requestLayout();
     }
 
     // ------------------------------------------------------------------ menu
+
+    ContextMenu getAudioMenu(String layerId) {
+        if (audioMenu != null) audioMenu.hide();
+        CheckMenuItem edit = new CheckMenuItem("Edit Volume");
+        edit.setId("audio-track-edit-volume");
+        edit.setSelected(tracks.isEditingVolume(layerId));
+        edit.setDisable(!edit.isSelected() && timeline.getKeyframeActions().isLocked(layerId));
+        edit.setOnAction(event -> {
+            if (doc() == null) return;
+            tracks.requestFocus();
+            doc().getSelection().layerIds().setAll(layerId);
+            tracks.editVolume(tracks.isEditingVolume(layerId) ? null : layerId);
+        });
+        audioMenu = new ContextMenu(edit);
+        return audioMenu;
+    }
 
     ContextMenu getKeyframeMenu() {
         if (keyframeMenu == null) {

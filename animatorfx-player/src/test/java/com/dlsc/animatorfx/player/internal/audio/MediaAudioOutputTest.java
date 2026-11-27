@@ -156,6 +156,34 @@ class MediaAudioOutputTest {
     }
 
     @Test
+    void anMp3VoiceCanStartItsClockBeforeDriftCorrectionSeeksAgain() throws Exception {
+        byte[] mp3;
+        try (var input = getClass().getResourceAsStream("startup.mp3")) {
+            mp3 = input.readAllBytes();
+        }
+        AudioLayer music = AudioLayer.create("music", "music", 0, 4);
+        Animation animation = Animation.create("MP3 startup", 10, 10, 4)
+                .withLayers(List.of(music))
+                .withAssets(List.of(new Asset("music", Asset.Kind.AUDIO, "assets/music.mp3", "music.mp3")));
+        AnimationPlayer player = new AnimationPlayer(new AnimationFile(animation, Map.of("music", mp3)));
+        MediaAudioOutput output = new MediaAudioOutput(player.getAnimation(), logger);
+        outputs.add(output);
+        player.setAudioOutputFactory(file -> output);
+        player.setVolume(0);
+        try {
+            player.play();
+            boolean available = await(() -> output.hasPlayed() || output.failedAssets().contains("music"), 8);
+            assumeTrue(available && output.hasPlayed(), "MP3 media is not available: " + logger.warnings);
+            assertTrue(await(() -> player.getCurrentTime() >= 2.5, 8));
+            assertTrue(output.seekCount() <= 2, "startup should not repeatedly seek: " + output.seekCount());
+            assertTrue(output.mediaTime(music.id()) > 1, "The decoder must advance, not just report PLAYING");
+        } finally {
+            player.stop();
+            player.dispose();
+        }
+    }
+
+    @Test
     void aVoiceFollowsTheAnimationClockWithoutBeingRepositionedAllTheTime() {
         AudioLayer tone = new AudioLayer(LayerBase.create("tone", 2).withId("tone"), "tone", 0, Animatable.of(1.0),
                 Animatable.of(0.0), false, false);

@@ -72,6 +72,23 @@ public final class SystemDialogs implements Dialogs {
     }
 
     @Override
+    public CompletableFuture<AudioPlacement> chooseAudioInsertion(double cursorTime) {
+        ButtonType beginning = new ButtonType("Beginning", ButtonData.NO);
+        ButtonType cursor = new ButtonType("Current Time Cursor", ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType("Cancel", ButtonData.CANCEL_CLOSE);
+        DialogPane.Dialog<Void> dialog = layer.dialog(DialogPane.Type.CONFIRMATION, "Insert Audio",
+                message("Where should the audio start? The current time cursor is at "
+                        + String.format(Locale.ROOT, "%.2f s.", cursorTime)), QUESTION_WIDTH,
+                List.of(beginning, cancel, cursor));
+        CompletableFuture<AudioPlacement> answer = new CompletableFuture<>();
+        if (!layer.show(dialog, button -> answer.complete(button == beginning ? AudioPlacement.BEGINNING
+                : button == cursor ? AudioPlacement.CURSOR : AudioPlacement.CANCEL))) {
+            answer.complete(AudioPlacement.CANCEL);
+        }
+        return answer;
+    }
+
+    @Override
     public CompletableFuture<CloseChoice> confirmClose(String documentTitle) {
         ButtonType save = new ButtonType("Save", ButtonData.YES);
         // macOS sets the button that throws the changes away apart, at the left

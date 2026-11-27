@@ -43,6 +43,9 @@ public final class MediaAudioOutput implements AudioOutput {
         boolean reposition;
         boolean broken;
         long lastSeek;
+        double seekPosition;
+        boolean awaitingClock;
+        double clockOffset;
         /** What the voice should be doing; {@code null} for nothing. */
         VoiceTarget wanted;
 
@@ -139,12 +142,24 @@ public final class MediaAudioOutput implements AudioOutput {
             }
             player.seek(Duration.seconds(position));
             lastSeek = now;
+            seekPosition = position;
+            awaitingClock = true;
             seeks++;
             maxSeek = Math.max(maxSeek, position);
         }
 
         private boolean drifted(VoiceTarget target) {
             double actual = player.getCurrentTime().toSeconds();
+            if (awaitingClock) {
+                // PLAYING can precede decoding; seeking again then can keep an MP3 silent.
+                if (!(actual > seekPosition)) {
+                    return false;
+                }
+                // Initial decoding latency is not ongoing drift.
+                clockOffset = actual - target.mediaTime();
+                awaitingClock = false;
+            }
+            actual -= clockOffset;
             Double duration = durations.get(assetId);
             if (loop && duration != null) {
                 // either side of the wrap is the same place in the sound
