@@ -32,7 +32,7 @@ class SessionStoreTest {
                 false, false);
         return new SessionState(new WindowState(120, 80, 1200, 760, true, 1),
                 new Layout(0.71, 0.62, true, false, "document"), "LIGHT", List.of(saved, untitled), "doc-2",
-                List.of(dir.resolve("recent-1.afx"), dir.resolve("recent-2.afx")));
+                List.of(dir.resolve("recent-1.afx"), dir.resolve("recent-2.afx")), true, false);
     }
 
     @Test

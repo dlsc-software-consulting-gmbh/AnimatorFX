@@ -80,6 +80,58 @@ class SampleFilesTest {
         return AnimationIO.read(DIRECTORY.resolve(name + ".afx")).animation();
     }
 
+    @Test
+    void loginSceneHasAStaggeredEntranceAndAnAmbientLoop() throws IOException {
+        if (Boolean.getBoolean("animatorfx.login.write")) {
+            AnimationIO.write(LoginSceneGenerator.create(), DIRECTORY.resolve("login.afx"));
+        }
+        assertTrue(Files.exists(DIRECTORY.resolve("login.afx")), "login sample is missing");
+        Animation animation = committed("login");
+        assertEquals(LoginSceneGenerator.create().animation(), animation);
+        if (!Boolean.getBoolean("animatorfx.login.write")) {
+            assertEquals(animation, Samples.load("login").animation());
+        }
+        assertEquals(1200, animation.width());
+        assertEquals(800, animation.height());
+        assertEquals(List.of("intro", "ambient"), animation.markers().stream().map(Marker::name).toList());
+        assertEquals(List.of("login-form"), Layers.slots(animation).stream().map(SlotLayer::slotName).toList());
+        Frame start = Evaluator.sample(animation, 0);
+        Frame entered = Evaluator.sample(animation, 4);
+        assertTrue(start.get("login-form").opacity() < entered.get("login-form").opacity());
+        assertTrue(start.get("login-left-card").position().x() < entered.get("login-left-card").position().x());
+        assertTrue(start.get("login-right-card").position().x() > entered.get("login-right-card").position().x());
+        assertNotEquals(Evaluator.sample(animation, 4).get("login-orb").position(),
+                Evaluator.sample(animation, 8).get("login-orb").position());
+        assertEquals(Evaluator.sample(animation, 4).get("login-orb").position(),
+                Evaluator.sample(animation, 12).get("login-orb").position());
+    }
+
+    @Test
+    void winterTownIsAnEditableLoopWithMovingSceneElements() throws IOException {
+        if (Boolean.getBoolean("animatorfx.winter.write")) {
+            WinterTownGenerator.write(DIRECTORY.resolve("winter-town.afx"));
+        }
+        assertTrue(Files.exists(DIRECTORY.resolve("winter-town.afx")), "winter-town sample is missing");
+        Animation animation = committed("winter-town");
+        assertEquals(WinterTownGenerator.create().animation(), animation);
+        assertEquals(1200, animation.width());
+        assertEquals(800, animation.height());
+        assertEquals(20, animation.duration());
+        assertTrue(Layers.flatten(animation).size() > 80);
+        Frame start = Evaluator.sample(animation, 0);
+        Frame middle = Evaluator.sample(animation, 10);
+        Frame end = Evaluator.sample(animation, 20);
+        for (String id : List.of("winter-car", "winter-snow-0", "winter-character-1", "winter-cloud")) {
+            assertNotEquals(start.get(id).position(), middle.get(id).position(), id);
+            assertEquals(start.get(id).position(), end.get(id).position(), id);
+        }
+        assertNotNull(Layers.find(animation, "winter-cloud").orElseThrow().base().motionPath());
+        assertNotNull(Layers.find(animation, "winter-house-a-shine").orElseThrow().base().mask());
+        assertNotEquals(start.get("winter-character-1-arm-b").rotation(),
+                middle.get("winter-character-1-arm-b").rotation());
+        assertTrue(Evaluator.sample(animation, 2.12).get("winter-character-1-eye-a").scale().y() < .1);
+    }
+
     @ParameterizedTest
     @MethodSource("names")
     void theCommittedFileIsWhatTheGeneratorProduces(String name) throws IOException {
@@ -130,10 +182,12 @@ class SampleFilesTest {
     }
 
     @Test
-    void theBrowserShowsEverySampleButTheInPlaceOne() {
+    void theBrowserShowsTheShowcasesButNotTheDedicatedDemos() {
         Set<String> all = SampleGenerator.all().keySet();
-        assertEquals(all.stream().filter(name -> !name.equals(Samples.ATTENTION)).toList(), Samples.SHOWCASE);
+        assertEquals(all.stream().filter(name -> !name.equals(Samples.ATTENTION)
+                && !name.equals(Samples.LIVE_ELEMENTS)).toList(), Samples.SHOWCASE);
         assertTrue(all.contains(Samples.ATTENTION));
+        assertTrue(all.contains(Samples.LIVE_ELEMENTS));
     }
 
     @ParameterizedTest

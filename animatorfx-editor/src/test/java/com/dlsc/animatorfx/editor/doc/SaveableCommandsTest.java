@@ -51,6 +51,23 @@ public class SaveableCommandsTest {
     }
 
     @Test
+    void duplicatedAndPastedGroupsDoNotCopyApplicationExportNames() {
+        Layer child = rect("r").withBase(rect("r").base().withExportName("accent"));
+        GroupLayer group = group("g", child);
+        group = group.withBase(group.base().withExportName("panel"));
+        Animation before = doc(group);
+
+        Animation duplicated = Commands.duplicateLayers(List.of("g")).apply(before);
+        assertEquals(List.of("panel", "accent", "", ""),
+                Layers.flatten(duplicated).stream().map(layer -> layer.base().exportName()).toList());
+        Animation pasted = Commands.addLayers("Paste", null, 1, Commands.freshCopies(before.layers())).apply(before);
+        assertEquals(List.of("panel", "accent", "", ""),
+                Layers.flatten(pasted).stream().map(layer -> layer.base().exportName()).toList());
+        RoundTrip.of(duplicated);
+        RoundTrip.of(pasted);
+    }
+
+    @Test
     void theSlotsOfADuplicatedGroupGetTheirOwnNames() {
         Animation before = doc(group("g", slot("s", "card"), group("inner", slot("t", "slot1")), rect("r")));
 

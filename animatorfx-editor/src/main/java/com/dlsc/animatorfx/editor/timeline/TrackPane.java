@@ -172,7 +172,6 @@ public final class TrackPane extends Region {
         Animation animation = doc.getAnimation();
         TimeScale scale = timeline.getScale();
         List<TimelineRow> rows = timeline.getRows();
-        List<String> selectedLayers = doc.getSelection().layerIds();
         Set<KeyframeRef> selectedKeys = doc.getSelection().keyframes();
         int first = Math.max(0, (int) Math.floor(timeline.getScrollY() / TimelineView.ROW_HEIGHT));
         g.setLineWidth(1);
@@ -183,7 +182,7 @@ public final class TrackPane extends Region {
             if (row instanceof PropertyRow) {
                 g.setFill(palette.get(Tone.ROW_ALT));
                 g.fillRect(0, y, width, TimelineView.ROW_HEIGHT);
-            } else if (selectedLayers.contains(row.layerId())) {
+            } else if (timeline.isHighlighted(row.layerId())) {
                 g.setFill(palette.get(Tone.ACCENT_SOFT));
                 g.fillRect(0, y, width, TimelineView.ROW_HEIGHT);
             }

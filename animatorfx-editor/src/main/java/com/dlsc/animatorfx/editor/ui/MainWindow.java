@@ -1,5 +1,12 @@
 package com.dlsc.animatorfx.editor.ui;
 
+import com.dlsc.animatorfx.editor.ai.AiAnimation;
+import com.dlsc.animatorfx.editor.ai.AiCredentialStore;
+import com.dlsc.animatorfx.editor.ai.AiEditService;
+import com.dlsc.animatorfx.editor.ai.AiGenerationService;
+import com.dlsc.animatorfx.editor.ai.AiModelCatalog;
+import com.dlsc.animatorfx.editor.ai.AiProviderClient;
+import com.dlsc.animatorfx.editor.ai.AiSettings;
 import com.dlsc.animatorfx.editor.audio.SoundPreview;
 import com.dlsc.animatorfx.editor.audio.AudioImport;
 import com.dlsc.animatorfx.editor.video.VideoImport;
@@ -8,9 +15,11 @@ import com.dlsc.animatorfx.editor.canvas.tools.VideoTool;
 import com.dlsc.animatorfx.editor.doc.EditorDocument;
 import com.dlsc.animatorfx.editor.inspector.sections.MotionPathSection;
 import com.dlsc.animatorfx.editor.session.RecoveryStore;
+import com.dlsc.animatorfx.editor.session.AppDirs;
 import com.dlsc.animatorfx.editor.session.SessionState.Layout;
 import com.dlsc.animatorfx.editor.session.SessionStore;
 import com.dlsc.animatorfx.editor.timeline.TimelineView;
+import com.dlsc.gemsfx.DialogPane;
 import javafx.application.ColorScheme;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
@@ -21,6 +30,9 @@ import javafx.collections.ListChangeListener;
 import javafx.geometry.Orientation;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
@@ -39,8 +51,17 @@ import javafx.stage.StageStyle;
 import javafx.stage.WindowEvent;
 
 import java.io.File;
+import java.io.UncheckedIOException;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * The main window in the motion-tool layout: window header with document tabs, playback toolbar, tool rail
@@ -67,11 +88,16 @@ public final class MainWindow {
     private final FileActions fileActions;
     private final ImportActions importActions;
     private final ExportActions exportActions;
+    private final AiActions aiActions;
+    private final AiGenerationHistory aiGenerationHistory;
+    private final AiPreferencesDialog aiPreferences;
     private final ToolBarView toolBar;
     private final ToolRail toolRail = new ToolRail();
     private final StatusBar statusBar = new StatusBar();
     private final CanvasView canvasView = new CanvasView();
     private final SidePanel sidePanel = new SidePanel();
+    private final AiConsole aiConsole = new AiConsole();
+    private final AiChat aiChat;
     private final TimelineView timelineView = new TimelineView();
     private final StackPane canvasSlot = new StackPane(canvasView);
     private final StackPane sideSlot = new StackPane(sidePanel);
@@ -83,6 +109,10 @@ public final class MainWindow {
     private final MenuBar menuBar;
     private final Scene scene;
     private final SessionController session;
+    private final Path aiSettings;
+    private final Function<String, String> readAiKey;
+    private long aiConsoleRevision;
+    private boolean closed;
 
     private double sideDivider = Layout.DEFAULT.sideDivider();
     private double timelineDivider = Layout.DEFAULT.timelineDivider();
@@ -103,6 +133,23 @@ public final class MainWindow {
      * @param dialogs the dialogs of the file actions; {@code null} for the dialogs of the application
      */
     public MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs) {
+        this(stage, sessionStore, recoveryStore, dialogs,
+                provider -> new AiCredentialStore().get(provider), new AiModelCatalog()::listModels);
+    }
+
+    MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs,
+               Function<String, String> readAiKey,
+               BiFunction<AiProviderClient.Provider, String, CompletableFuture<List<String>>> listModels) {
+        this(stage, sessionStore, recoveryStore, dialogs, readAiKey, listModels,
+                AppDirs.configDir().resolve("ai.properties"),
+                (provider, key) -> new AiCredentialStore().put(provider, key),
+                provider -> new AiCredentialStore().delete(provider));
+    }
+
+    MainWindow(Stage stage, SessionStore sessionStore, RecoveryStore recoveryStore, Dialogs dialogs,
+               Function<String, String> readAiKey,
+               BiFunction<AiProviderClient.Provider, String, CompletableFuture<List<String>>> listModels,
+               Path aiSettings, BiConsumer<String, String> putAiKey, Consumer<String> deleteAiKey) {
         this.stage = stage;
         stage.initStyle(StageStyle.EXTENDED);
         Image icon = new Image(MainWindow.class.getResource(
@@ -112,8 +159,41 @@ public final class MainWindow {
         fileActions = new FileActions(workspace, this.dialogs, noticeBar, () -> stage);
         importActions = new ImportActions(workspace, noticeBar, this.dialogs, () -> stage);
         exportActions = new ExportActions(workspace, noticeBar, this.dialogs, () -> stage);
+        this.aiSettings = aiSettings;
+        this.readAiKey = readAiKey;
+        AiProviderClient aiClient = new AiProviderClient();
+        Supplier<AiSettings> loadAiSettings = () -> {
+            try {
+                return AiSettings.load(aiSettings);
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+        };
+        AiEditService editor = new AiEditService(readAiKey, aiClient::edit, aiClient::review,
+                message -> Platform.runLater(() -> aiConsole.log(message)));
+        aiChat = new AiChat(workspace, loadAiSettings, (settings, file, selection, time, history, prompt, attachments) ->
+                editor.edit(settings, file, selection, time, history, prompt, attachments),
+                aiConsole::log);
+        aiConsole.installChat(aiChat);
+        AiNotifications notifications = new AiNotifications(workspace, aiConsole::log);
+        aiGenerationHistory = new AiGenerationHistory(notifications, theme, this::showAiGeneration);
+        aiActions = new AiActions(dialogLayer, notifications, loadAiSettings, (settings, prompt, attachments, usage) -> {
+            AiGenerationService generator = new AiGenerationService(aiSettings, readAiKey,
+                    (provider, model, key, input) -> aiClient.generate(provider, model, key, input,
+                            AiAnimation.schema(), usage, attachments),
+                    (provider, model, key, context, frames, schema, instructions) ->
+                            aiClient.review(provider, model, key, context, frames, schema, instructions, usage),
+                    message -> Platform.runLater(() -> aiConsole.log(message)));
+            return generator.generate(settings, prompt, attachments);
+        });
+        aiPreferences = new AiPreferencesDialog(dialogLayer, aiSettings,
+                putAiKey, deleteAiKey, readAiKey, listModels, () -> {
+                    aiChat.refresh();
+                    refreshAiConsole();
+                });
         HeaderBarView header = new HeaderBarView(
                 new DocumentTabs(workspace, fileActions::close, fileActions::newDocument), theme, icon, canvasView);
+        header.addGenerationButton(notifications.runningProperty(), aiGenerationHistory::show);
         HeaderBar.systemColorSchemeProperty(stage).bind(Bindings.when(theme.darkProperty())
                 .then(ColorScheme.DARK).otherwise(ColorScheme.LIGHT));
         HeaderBar.systemButtonHeightProperty(stage).bind(header.heightProperty());
@@ -144,7 +224,8 @@ public final class MainWindow {
         content.setTop(new VBox(header, menuBar, toolBar, noticeBar));
         content.setBottom(statusBar);
         // the dialog layer covers everything, an in-window menu bar included
-        StackPane root = new StackPane(content, dialogLayer.getPane());
+        notifications.pane().setContent(content);
+        StackPane root = new StackPane(notifications.pane(), dialogLayer.getPane());
         // no scene size: the stage is sized by the session before it shows
         scene = new Scene(root);
         theme.install(scene);
@@ -186,6 +267,7 @@ public final class MainWindow {
         session = new SessionController(this, sessionStore, recoveryStore);
         session.restore();
         session.start();
+        refreshAiConsole();
     }
 
     public void show() {
@@ -206,7 +288,9 @@ public final class MainWindow {
         if (!session.shutdown()) {
             return false;
         }
-        runShutdownSteps(List.of(canvasView::dispose, theme::dispose));
+        closed = true;
+        runShutdownSteps(List.of(aiGenerationHistory::dispose, aiActions::dispose, aiChat::dispose,
+                canvasView::dispose, theme::dispose));
         return true;
     }
 
@@ -247,6 +331,55 @@ public final class MainWindow {
 
     public ExportActions getExportActions() {
         return exportActions;
+    }
+
+    void showAiGeneration() {
+        if (closed) return;
+        checkAiProviderConfigured().thenAccept(available -> Platform.runLater(() -> {
+            if (closed) return;
+            if (available) aiActions.generate();
+            else showAiProviderRequired();
+        }));
+    }
+
+    void showAiPreferences() {
+        aiPreferences.show();
+    }
+
+    private void showAiProviderRequired() {
+        Label message = new Label("Configure an AI provider and API key in AI Preferences before generating.");
+        message.setId("ai-provider-required-message");
+        message.setWrapText(true);
+        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType preferences = new ButtonType("Open AI Preferences", ButtonBar.ButtonData.OK_DONE);
+        DialogPane.Dialog<Void> dialog = dialogLayer.dialog(DialogPane.Type.WARNING, "AI Provider Required",
+                message, 440, List.of(cancel, preferences));
+        if (dialogLayer.show(dialog, button -> {
+            if (button == preferences) Platform.runLater(aiPreferences::show);
+        })) {
+            dialog.getButton(preferences).setId("ai-open-preferences");
+        }
+    }
+
+    private CompletableFuture<Boolean> checkAiProviderConfigured() {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                AiSettings settings = AiSettings.load(aiSettings);
+                String key = readAiKey.apply(settings.provider().name());
+                return key != null && !key.isBlank() && key.length() <= 1000;
+            } catch (Exception | LinkageError ex) {
+                return false;
+            }
+        });
+    }
+
+    private void refreshAiConsole() {
+        if (closed) return;
+        long revision = ++aiConsoleRevision;
+        sidePanel.setAiConsoleAvailable(aiConsole, false);
+        checkAiProviderConfigured().thenAccept(available -> Platform.runLater(() -> {
+            if (!closed && revision == aiConsoleRevision) sidePanel.setAiConsoleAvailable(aiConsole, available);
+        }));
     }
 
     public Dialogs getDialogs() {
@@ -431,6 +564,8 @@ public final class MainWindow {
         canvasView.setNotifier(noticeBar::show);
         canvasView.setKeyboardTaken(this::isDialogShowing);
         timelineView.setNotifier(noticeBar::show);
+        timelineView.setOnClose(() -> setTimelineVisible(false));
+        sidePanel.setOnClose(() -> setSidePanelVisible(false));
         timelineView.setSoundImporter(() -> importActions.chooseAndImportCue(timelineView::selectCue));
         sidePanel.getInspector().section(MotionPathSection.class)
                 .ifPresent(section -> section.setActions(canvasView::drawMotionPath, canvasView::editMotionPath));

@@ -14,6 +14,10 @@ animations it creates inside JavaFX applications.
 - An animation can carry **sound**: audio layers that play in sync with it and cues that fire
   at a point in time.
 - Embedded **video layers** play MP4/M4V picture and sound together on the animation timeline.
+- **Live elements** expose named authored layers to your application for click handling and
+  persistent text, fill and visibility overrides.
+- **AI Chat attachments** let you explicitly share project images or external artwork with the
+  AI to inspect, reuse or place in an undoable edit.
 
 **User manual:** [Read online](docs/USER_MANUAL.md) · [Download the PDF](docs/AnimatorFX-User-Manual.pdf)
 
@@ -54,6 +58,8 @@ animations it creates inside JavaFX applications.
 - Markers: named time ranges that can be played by name.
 - Slots, in two modes: *embedded* (your node lives inside the animation) and *in place* (your
   node stays in your layout and is moved, scaled, rotated and faded by the animation).
+- Named live elements: interact with authored content and override its text, fill or visibility
+  without losing customization during playback or node replacement.
 - Shapes (rectangle, ellipse, line, polygon, star, Bezier path), text, images, groups.
 - Solid, linear and radial paints; strokes with caps, joins and dashes; trim paths.
 - Path morphing, motion paths with orient-to-path, clip and alpha masks, blur, drop shadow, glow.
@@ -75,6 +81,9 @@ animations it creates inside JavaFX applications.
 - Video import, reusable assets, rectangular canvas editing, inspector controls and clip bars.
 - Inspector with a keyframe toggle on every animatable property and a cubic-bezier easing editor.
 - Auto-key, undo/redo, copy/paste of layers and keyframes, groups.
+- Unique export names in the Layer inspector for application-facing live elements.
+- AI generation and project editing with OpenAI or Anthropic, including removable image/SVG
+  attachments, optional visual review and an activity console.
 - Import of SVG, Lottie JSON (with embedded sounds) and FXML.
 - Export to Lottie: a dotLottie archive or Lottie JSON, with a report of what Lottie cannot hold.
 - Dark and light theme, or follow the system.
@@ -152,6 +161,18 @@ The sample application starts with its sound switched off with
 
 ### The sample application
 
+The **Interactive login demo** button opens a 1200×800 animation with real JavaFX form controls
+embedded in the `login-form` slot of `samples/animations/login.afx`. Sign in with
+`demo@example.com` and `animatorfx`, or try the simulated forgotten-password and reset flow.
+The demo sends no email, contacts no server, and keeps password changes only until its window
+closes. The animation can also be opened in the editor; the interactive form is supplied by the
+sample application.
+
+The **Live elements demo** looks up exported layers in `samples/animations/live-elements.afx`
+using `AnimationView.getElement()`. Click the animated circle to change its fill and the message,
+toggle the sparkle's visibility, and reset the overrides to the authored values. See
+`LiveElementsDemo` for the application code.
+
 ![The sample application](docs/images/sample-app.png)
 
 `samples/animatorfx-sample-app` is a plain JavaFX window (Modena, no AtlantaFX) that depends on
@@ -168,6 +189,7 @@ views when the window closes. It plays the files of `samples/animations`:
 | `card.afx` | A card with a drop shadow, a masked shine sweep and two slots, `title` and `action`; marker `shine` |
 | `orbit.afx` | Two shapes following motion paths, oriented to the path, with trimmed trails and a blurred glow |
 | `attention.afx` | A single slot that wiggles, with a cue that ticks when it starts; used to animate an ordinary button in place |
+| `live-elements.afx` | Named visual layers for the interactive lookup and manipulation demo |
 
 ![Frames of loader.afx](docs/images/sample-loader.png)
 ![Frames of success.afx](docs/images/sample-success.png)
@@ -185,18 +207,23 @@ anywhere else is shipped. The other samples are silent. To write the files again
 mvn -pl samples/animatorfx-sample-app test -Dtest=SampleFilesTest -Danimatorfx.samples.write=true
 ```
 
+To regenerate the separate interactive login scene:
+
+```bash
+mvn -pl samples/animatorfx-sample-app test -Dtest=SampleFilesTest#loginSceneHasAStaggeredEntranceAndAnAmbientLoop -Danimatorfx.login.write=true
+```
+
 ### Packaging
 
 `mvn -Ppackage -pl animatorfx-editor -am package` produces an application image for the platform
 it runs on in `animatorfx-editor/target/dist` (`AnimatorFX.app` on macOS). Add `-DskipTests` if
 the tests have already run. The profile
 
-1. copies the editor and its runtime dependencies, all of them explicit JPMS modules (GemsFX and
-   what its module descriptor requires included: ValidatorFX, PickerFX, JSVG, three Ikonli packs
-   and `javafx.swing`; `javafx.media` with its native libraries; `java.desktop`), to
-   `target/package/modules`,
-2. links a trimmed Java runtime that contains them with `jlink` (`target/package/runtime`),
-3. wraps that runtime with `jpackage --type app-image` (name AnimatorFX, version 1.0.0, bundle
+1. copies the editor and its runtime dependencies to `target/package/app/lib`,
+2. links a trimmed Java runtime with JavaFX and the required JDK modules (`target/package/runtime`).
+   Application libraries run on the class path because LangChain4j uses automatic modules, which
+   `jlink` cannot link,
+3. wraps the application and runtime with `jpackage --type app-image` (name AnimatorFX, version 1.0.0, bundle
    identifier `com.dlsc.animatorfx.editor`, and on macOS the icon `src/package/macos/AnimatorFX.icns`).
 
 ```bash
@@ -281,6 +308,49 @@ Fit and auto-play can also be set from CSS (style class `animation-view`):
 
 `view.getPlayer()` returns the `AnimationPlayer` with the remaining properties and events
 (`autoReverse`, `status`, `activeMarker`, `onFinished`, `onMarkerReached`).
+
+### Interacting with authored elements
+
+Select one visual layer in the editor and set **Layer > Export name**, for example `submit`,
+`greeting` or `accent`. Export names are independent of display names and internal IDs, and
+must be unique throughout the animation, including nested groups. An empty name keeps a layer
+private. Duplicating or pasting layers clears the copies' export names.
+
+```java
+AnimationElement submit = view.getElement("submit");
+submit.setOnMouseClicked(event -> controller.submit());
+
+view.getElement("greeting").setText("Welcome, Anna");
+view.getElement("accent").setFill(Color.CORNFLOWERBLUE);
+submit.setVisible(false);
+
+view.getElement("accent").setFill(null);  // restore the current sampled fill
+submit.clearOverrides();                 // restore authored values; keep the click handler
+```
+
+Call these methods on the JavaFX application thread after loading the document, even before
+adding the view to a scene. Text (text layers), fill (shape and text layers), and visibility
+overrides win until cleared; geometry, transforms, opacity and other properties still follow
+the animation. A visibility override changes the layer's own visibility, including its in/out
+range, but cannot overcome hidden parents, clipping or zero opacity.
+
+Each export has one stable handle per view. Its `getNode()` is `null` until the skin renders it,
+or while the export is absent. Listen to `nodeProperty()` to install other interactions such as
+tooltips on each replacement node. Click handlers registered on the handle are reattached
+automatically and removed from old nodes. Handles and overrides follow the same export name
+when the document or skin changes; a replacement of another type ignores unsupported overrides.
+An unknown visual export throws `IllegalArgumentException`; lookup without a document throws
+`IllegalStateException`. Audio layers are not visual exports. Exported mask layers expose clip
+nodes rather than independently interactive content.
+
+Overrides are runtime customization, not changes to the saved `.afx` document. They remain on
+the handle while its export is temporarily absent and apply again if that export returns.
+Try the [Live elements demo](#the-sample-application) for a complete interactive example.
+
+Do not move these nodes into another parent or bind properties controlled by the renderer.
+Shape layers expose groups containing paths, not necessarily JavaFX `Shape` instances. The
+lower-level `getLayerNode(layerId)` remains available for tooling, but direct changes to
+renderer-owned node properties can be overwritten by playback. Use slots for host-owned controls.
 
 ### Markers
 
@@ -427,6 +497,126 @@ Tab stays within the dialog, Enter presses its default button, Escape cancels it
 returns to where it was afterwards. One dialog shows at a time: a request made meanwhile, such
 as a second *Close*, is ignored. Only *Open*, *Save As* and the import choosers are the file
 dialogs of the operating system.
+
+### AI-generated animations
+
+AnimatorFX uses LangChain4j for generation. Choose *File ▸ AI Preferences…* to select OpenAI or
+Anthropic and save the provider's API key in
+the operating system's credential store. The non-editable model dropdowns list only models
+available to the key that support structured animation responses and image input, ordered by
+suitability for AnimatorFX. Use *Refresh* after entering a new key. On Linux, a working Secret Service or GNOME Keyring is
+required; AnimatorFX does not fall back to storing keys in plain text. Leave a key field blank to
+keep its existing key, or select its removal checkbox.
+
+Choose *File ▸ Generate with AI…* and describe the animation. The dialog shows the selected
+provider and model; your description is sent to that provider and may incur charges. The result is
+validated and opens as a new, unsaved document containing editable layers and keyframes.
+Use *Add Files…* or drop artwork onto the dialog's *Attachments* area to provide raster images
+or SVGs. Referenced raster files become embedded image assets; referenced SVGs become editable
+vector layers. Unused attachments are not embedded. The AI does not generate new image, audio
+or video files. Cancelling or failing a request leaves your existing documents unchanged.
+Without a configured provider key and model, generation offers a shortcut to AI Preferences.
+
+When the selected provider has a saved key and model, the side panel offers an *AI Console*.
+Use its *Chat* tab to describe additions or changes to the current project. It can add vector and
+text layers and groups, edit supported properties and text, and add or update keyframes. Changes
+are validated and applied as one undoable edit; a response is discarded if the project changes
+while the request is in progress. Locked layers and groups are not modified.
+
+#### Attach artwork to a chat message
+
+In *Chat*, choose *Project image…* to attach an existing image asset, or use *Add Files…* or
+drop files onto the attachment tray for external artwork. Project images are never attached
+automatically. Preview chips show what will be sent; remove a chip before sending to exclude it.
+
+Each message supports up to five attachments in total. External files must be PNG, JPEG, GIF or
+SVG and no larger than 5 MB each; provider previews are PNGs bounded to 200 KB. Invalid or
+oversized attachments show an inline error. Project choices follow changes and undo/redo in
+the active document; unavailable project attachments must be removed or restored before sending.
+
+Describe the intended use, for example “place this logo beside the title” or “use this photo's
+palette.” The AI can inspect an attachment as a reference or place it. Selected project images,
+including project SVG image assets, reuse their existing asset IDs; external rasters are embedded
+only when referenced, and external SVGs expand into editable vectors. New assets and layers form
+one undoable edit. Repeated uses of an external raster share one embedded asset.
+
+Attachments belong only to the message that sends them. Sending clears the tray, switching
+documents clears drafts, and follow-ups require reattachment. The transcript retains names only,
+not attachment bytes.
+
+#### Review and refine edits
+
+After an AI edit, expand the affected layers in Chat to adjust supported values directly, including
+drop-shadow color, radius, offsets and spread. Adjustments apply immediately as separate undoable
+changes. Controls follow the current project and become unavailable when their target is locked,
+removed or no longer safely identifiable. Complex paths remain editable on the canvas.
+
+Generation and chat can repair invalid AI responses twice before reporting a failure. Chat also supports
+renaming, duplicating and reordering layers and cubic-bezier keyframes. Changes are validated before
+application; a chat request remains one undo step.
+
+In AI Preferences, **visual review** is optional and disabled by default. When enabled, the application
+renders three small frames of a validated candidate and sends them to a vision-capable model for one
+possible refinement. These frames may reveal embedded project content and incur additional charges.
+There are at most four provider calls per interaction. If visual review fails, is unsupported, or the
+project contains video layers, the validated candidate is retained and the Activity tab reports the skip.
+
+The project structure (including layer names and text), selection, playhead and recent conversation
+are sent to the selected provider and may incur charges. Only explicitly attached visuals are sent
+as previews, with their names and request-local IDs; original media bytes, local asset paths and
+unselected project asset data are not sent. Optional visual-review frames can reveal rendered
+embedded content. Conversations are kept in memory per open document and can be cleared in *Chat*.
+The separate *Activity* tab shows session activity and sanitized error details; prompts, project
+content and API keys are not intentionally recorded there.
+
+AI provider requests and responses are also logged to the application terminal, including prompts
+and project content. The configured API key is redacted and HTTP headers are not logged; treat
+terminal logs as private.
+
+#### On-demand model quality evaluation
+
+The test-scope `AiQualityEvaluation` main class compares explicitly chosen models using the real
+generation service, its validation/repair policy, and four synthetic prompts (bounce, seamless
+loader, staged text/card, Bezier orbit). **Only the explicit main-class invocation below makes
+API calls; normal tests/builds do not.** With JDK 27, from the repository root:
+
+```bash
+./mvnw -pl animatorfx-editor -am install -DskipTests
+./mvnw -pl animatorfx-editor org.codehaus.mojo:exec-maven-plugin:3.7.0:java \
+  -Dexec.classpathScope=test \
+  -Dexec.mainClass=com.dlsc.animatorfx.editor.ai.AiQualityEvaluation \
+  '-Dexec.args=--provider OPENAI --model MODEL_A --model MODEL_B --output /absolute/review-dir'
+```
+
+Replace model IDs and destination; repeat `--model` as needed. For Anthropic, use
+`--provider ANTHROPIC`. Set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` securely in the environment,
+or save the selected provider's key through AI Preferences (environment takes precedence).
+There is no key argument or key file; documents echoing the configured key are withheld
+(`sensitive_output`). **Billable/private:** each model runs four requests,
+potentially three generation attempts per prompt plus SDK/network retries; prompts and generated
+content go to that provider and may appear in redacted-key terminal traffic logs. No current
+project or assets are read. Check provider pricing/data policies before running.
+
+Each invocation creates a new `quality-*` subdirectory; exclusive, index-based `.afx` filenames
+never overwrite existing files or incorporate model/provider-generated names. Open successful
+files in AnimatorFX for editable review. `results.jsonl` maps filenames to model and full prompt,
+validation (`passed` / `not_passed`), status, service-request count (`providerCalls`) and end-to-end
+generation latency in milliseconds (includes repairs/validation, excludes disk writes).
+`not_passed` includes unavailable responses, not just malformed output. Failures are recorded
+without raw error text and remaining cases continue; each case has a six-minute timeout.
+Main-class failure status 1 means failed cases; 2 means setup/report failure. Interruption stops
+the run; the report retains completed rows. Visual AI review is disabled for this comparison.
+
+**Human rubric:** hide model names while reviewing; score each dimension 0 (missing/broken),
+1 (major issues), 2 (minor issues), 3 (polished). Check (1) prompt fidelity and timing,
+(2) composition, contrast and readable text, (3) smooth motion and believable bounce/contact,
+(4) loop seams or staged entrance/final hold as appropriate, and (5) editable layers/groups and
+usable keyframes. Play at normal speed and scrub start/middle/end and contact/seam frames.
+Record scores beside the model/prompt rows; a schema pass is not proof of visual quality.
+This is a small, nondeterministic manual benchmark, not an automated quality ranking or cost meter.
+
+Offline regression tests: `./mvnw -pl animatorfx-editor -am test -Dtest=AiQualityEvaluationTest -Dsurefire.failIfNoSpecifiedTests=false`
+(fake transport/credentials and temporary output only).
 
 ### Tools and shortcuts
 

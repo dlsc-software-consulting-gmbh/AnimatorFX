@@ -162,6 +162,84 @@ class TimelineViewTest extends EditorUiTest {
         assertFalse(layerCell("a").getPseudoClassStates().stream().anyMatch(p -> p.getPseudoClassName().equals("selected")));
     }
 
+    private void addManyLayers() {
+        Layer[] more = new Layer[40];
+        for (int i = 0; i < more.length; i++) {
+            more[i] = rect("m" + i, 0, 0, 10, 10);
+        }
+        add(more);
+        layout();
+    }
+
+    private boolean rowInView(String layerId) {
+        return fx(() -> {
+            double top = timeline.rowTop(tracks.rowOf(layerId));
+            return top >= 0 && top + TimelineView.ROW_HEIGHT <= tracks.getHeight();
+        });
+    }
+
+    @Test
+    void selectingALayerElsewhereScrollsItsRowIntoView() {
+        addManyLayers();
+        assertFalse(rowInView("a"));
+        select("a");
+        layout();
+        assertTrue(rowInView("a"));
+        select("m39");
+        layout();
+        assertTrue(rowInView("m39"));
+    }
+
+    @Test
+    void theFollowSelectionButtonSwitchesScrollingOff() {
+        addManyLayers();
+        assertTrue(timeline.isFollowSelection());
+        fire("#" + LayerTreeColumn.FOLLOW_SELECTION_ID);
+        assertFalse(timeline.isFollowSelection());
+        select("a");
+        layout();
+        assertFalse(rowInView("a"));
+        assertEquals(0, fx(timeline::getScrollY));
+    }
+
+    @Test
+    void withFollowSelectionOffOnlyTimelineClicksChangeTheHighlight() {
+        fire("#" + LayerTreeColumn.FOLLOW_SELECTION_ID);
+        select("a");
+        layout();
+        assertFalse(selectedPseudo(layerCell("a")));
+        assertFalse(fx(() -> timeline.isHighlighted("a")));
+
+        click(layerCell("b"), 100, 10);
+        assertEquals(List.of("b"), selection());
+        assertTrue(selectedPseudo(layerCell("b")));
+        assertTrue(fx(() -> timeline.isHighlighted("b")));
+
+        select("c");
+        layout();
+        assertTrue(selectedPseudo(layerCell("b")));
+        assertFalse(selectedPseudo(layerCell("c")));
+
+        fire("#" + LayerTreeColumn.FOLLOW_SELECTION_ID);
+        assertTrue(selectedPseudo(layerCell("c")));
+        assertFalse(selectedPseudo(layerCell("b")));
+    }
+
+    private static boolean selectedPseudo(Node node) {
+        return node.getPseudoClassStates().stream().anyMatch(p -> p.getPseudoClassName().equals("selected"));
+    }
+
+    @Test
+    void aLayerInACollapsedGroupRevealsTheGroupWithoutExpandingIt() {
+        add(group("g", rect("g1", 0, 0, 10, 10)));
+        addManyLayers();
+        assertFalse(rowInView("g"));
+        select("g1");
+        layout();
+        assertTrue(rowInView("g"));
+        assertFalse(doc.getViewState().getExpandedLayerIds().contains("g"));
+    }
+
     @Test
     void doubleClickRenamesALayerAsOneUndoStep() {
         doubleClick(layerCell("b"), 100, 10);

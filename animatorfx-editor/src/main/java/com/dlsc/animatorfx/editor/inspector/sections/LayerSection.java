@@ -7,6 +7,8 @@ import com.dlsc.animatorfx.editor.inspector.fields.NumberField;
 import com.dlsc.animatorfx.editor.inspector.fields.TextValueField;
 import com.dlsc.animatorfx.editor.timeline.TimeScale;
 import com.dlsc.animatorfx.model.Layer;
+import com.dlsc.animatorfx.model.Layers;
+import java.util.Optional;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
@@ -16,17 +18,19 @@ import org.kordamp.ikonli.material2.Material2AL;
 import org.kordamp.ikonli.material2.Material2MZ;
 
 /**
- * Name, in and out point, visibility and lock of the selected layers.
+ * Name, application export name, in and out point, visibility and lock of the selected layers.
  */
 public final class LayerSection extends SectionBase {
 
     public static final String NAME_ID = "inspector-layer-name";
+    public static final String EXPORT_NAME_ID = "inspector-layer-export-name";
     public static final String IN_ID = "inspector-layer-in";
     public static final String OUT_ID = "inspector-layer-out";
     public static final String VISIBLE_ID = "inspector-layer-visible";
     public static final String LOCKED_ID = "inspector-layer-locked";
 
     private final TextValueField name = new TextValueField();
+    private final TextValueField exportName = new TextValueField();
     private final NumberField in = new NumberField(PropertyUnits.SECONDS);
     private final NumberField out = new NumberField(PropertyUnits.SECONDS);
     private final FontIcon visibleIcon = new FontIcon(Material2MZ.VISIBILITY);
@@ -42,6 +46,26 @@ public final class LayerSection extends SectionBase {
         name.setOnCommit(text -> context().edit("Rename Layer", Layer.class,
                 l -> l.withBase(l.base().withName(text.strip())), null));
         row("Name", name);
+
+        exportName.setId(EXPORT_NAME_ID);
+        exportName.setPromptText("Private");
+        exportName.setValidator(text -> {
+            String value = text.strip();
+            if (value.isEmpty()) return Optional.empty();
+            if (context() == null || context().layers().size() != 1) return Optional.empty();
+            String id = context().layers().getFirst().id();
+            boolean used = Layers.flatten(context().animation()).stream()
+                    .anyMatch(layer -> !layer.id().equals(id) && layer.base().exportName().equals(value));
+            return used ? Optional.of("Export names must be unique throughout the animation") : Optional.empty();
+        });
+        exportName.setOnCommit(text -> {
+            if (context().layers().size() == 1 && context().allVisual()) {
+                context().edit("Change Export Name", Layer.class,
+                        layer -> layer.withBase(layer.base().withExportName(text)), null);
+            }
+        });
+        row("Export name", exportName).getLabel().setTooltip(
+                new Tooltip("Application-facing name for AnimationView.getElement(); leave empty for a private layer"));
 
         in.setId(IN_ID);
         out.setId(OUT_ID);
@@ -100,10 +124,12 @@ public final class LayerSection extends SectionBase {
     @Override
     protected void updateFields(InspectorContext context) {
         name.setValue(context.common(Layer.class, Layer::name));
+        exportName.setValue(context.layers().size() == 1 ? context.layers().getFirst().base().exportName() : "");
         in.setValue(context.common(Layer.class, l -> l.base().inPoint()));
         out.setValue(context.common(Layer.class, l -> l.base().outPoint()));
         boolean anyLocked = context.layers().stream().anyMatch(l -> l.base().locked());
         name.setDisable(anyLocked);
+        exportName.setDisable(anyLocked || context.layers().size() != 1 || !context.allVisual());
         in.setDisable(anyLocked);
         out.setDisable(anyLocked);
         updating = true;

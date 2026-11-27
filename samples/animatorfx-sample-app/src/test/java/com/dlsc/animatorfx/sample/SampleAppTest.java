@@ -4,14 +4,23 @@ import com.dlsc.animatorfx.player.AnimationPlayer;
 import com.dlsc.animatorfx.player.AnimationView;
 import javafx.scene.Node;
 import javafx.scene.Parent;
+import javafx.scene.Group;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
 import javafx.scene.control.Slider;
+import javafx.scene.control.TextField;
 import javafx.scene.image.WritableImage;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
+import javafx.scene.layout.StackPane;
+import javafx.scene.shape.Shape;
+import javafx.scene.text.Text;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +84,125 @@ class SampleAppTest {
             assertEquals("loader", browser.getList().getSelectionModel().getSelectedItem());
             assertSame(browser.getShowcase("loader"), browser.getCenter());
         });
+    }
+
+    @Test
+    void liveElementsDemoRespondsToClicksAndRestoresAuthoredValues() throws Exception {
+        Fx.run(() -> {
+            Button open = lookup(browser, "#open-live-elements-demo", Button.class);
+            assertTrue(open.localToScene(open.getBoundsInLocal()).getMaxX() <= browser.getWidth());
+            CheckBox dark = lookup(browser, "#dark", CheckBox.class);
+            assertTrue(dark.localToScene(dark.getBoundsInLocal()).getMaxX() <= browser.getWidth());
+            open.fire();
+            Stage dialog = Window.getWindows().stream().filter(window -> window instanceof Stage
+                    && window != stage && ((Stage) window).getOwner() == stage)
+                    .map(Stage.class::cast).findFirst().orElseThrow();
+            try {
+                Parent root = dialog.getScene().getRoot();
+                root.applyCss();
+                root.layout();
+                AnimationView view = lookup(root, "#live-elements-view", AnimationView.class);
+                var button = view.getElement("button");
+                var label = view.getElement("label");
+                var sparkle = view.getElement("sparkle");
+                assertNotNull(button.getNode());
+                button.getNode().fireEvent(new MouseEvent(MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
+                        MouseButton.PRIMARY, 1, false, false, false, false,
+                        true, false, false, false, false, false, null));
+                assertEquals("Clicked 1 time", label.getText());
+                assertEquals("Clicked 1 time", ((Text) label.getNode()).getText());
+                assertEquals(Color.CORAL, ((Shape) ((Group) button.getNode()).getChildren().get(0)).getFill());
+
+                lookup(root, "#show-sparkle", CheckBox.class).fire();
+                assertEquals(Boolean.FALSE, sparkle.getVisible());
+                assertFalse(sparkle.getNode().isVisible());
+                lookup(root, "#reset-elements", Button.class).fire();
+                assertNull(label.getText());
+                assertNull(button.getFill());
+                assertNull(sparkle.getVisible());
+                assertEquals("Click the circle", ((Text) label.getNode()).getText());
+                assertEquals(Color.web("#6366F1"), ((Shape) ((Group) button.getNode()).getChildren().get(0)).getFill());
+                assertTrue(sparkle.getNode().isVisible());
+                assertTrue(lookup(root, "#show-sparkle", CheckBox.class).isSelected());
+                button.getNode().fireEvent(new MouseEvent(MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
+                        MouseButton.PRIMARY, 1, false, false, false, false,
+                        true, false, false, false, false, false, null));
+                assertEquals("Clicked 1 time", ((Text) label.getNode()).getText());
+            } finally {
+                dialog.close();
+            }
+        });
+    }
+
+    @Test
+    void loginDemoSupportsSimulatedRecoveryAndPasswordChange() throws Exception {
+        Fx.run(() -> {
+            lookup(browser, "#open-login-demo", Button.class).fire();
+            Stage dialog = Window.getWindows().stream().filter(window -> window instanceof Stage
+                    && window != stage && ((Stage) window).getOwner() == stage)
+                    .map(Stage.class::cast).findFirst().orElseThrow();
+            try {
+                Parent root = dialog.getScene().getRoot();
+                lookup(root, "#login-email", TextField.class).setText("demo@example.com");
+                lookup(root, "#login-password", PasswordField.class).setText("wrong");
+                lookup(root, "#sign-in", Button.class).fire();
+                assertTrue(lookup(root, "#login-message", Label.class).getText().contains("Incorrect"));
+
+                lookup(root, "#forgot-password", Button.class).fire();
+                lookup(root, "#recovery-email", TextField.class).setText("other@example.com");
+                lookup(root, "#send-recovery", Button.class).fire();
+                assertTrue(lookup(root, "#login-message", Label.class).getText().contains("demo account"));
+                lookup(root, "#recovery-email", TextField.class).setText("demo@example.com");
+                lookup(root, "#send-recovery", Button.class).fire();
+                lookup(root, "#new-password", PasswordField.class).setText("new-password");
+                lookup(root, "#confirm-password", PasswordField.class).setText("different");
+                lookup(root, "#reset-password", Button.class).fire();
+                assertTrue(lookup(root, "#login-message", Label.class).getText().contains("match"));
+                lookup(root, "#confirm-password", PasswordField.class).setText("new-password");
+                lookup(root, "#reset-password", Button.class).fire();
+                lookup(root, "#login-email", TextField.class).setText("demo@example.com");
+                lookup(root, "#login-password", PasswordField.class).setText("animatorfx");
+                lookup(root, "#sign-in", Button.class).fire();
+                assertTrue(lookup(root, "#login-message", Label.class).getText().contains("Incorrect"));
+                lookup(root, "#login-password", PasswordField.class).setText("new-password");
+                lookup(root, "#sign-in", Button.class).fire();
+                assertTrue(lookup(root, "#login-message", Label.class).getText().contains("Signed in"));
+            } finally {
+                dialog.close();
+            }
+        });
+    }
+
+    @Test
+    void loginDemoTransitionsFromIntroToLoopingAmbient() throws Exception {
+        Stage dialog = Fx.call(() -> {
+            lookup(browser, "#open-login-demo", Button.class).fire();
+            return Window.getWindows().stream().filter(window -> window instanceof Stage
+                    && window != stage && ((Stage) window).getOwner() == stage)
+                    .map(Stage.class::cast).findFirst().orElseThrow();
+        });
+        try {
+            AnimationView view = Fx.call(() -> (AnimationView) ((StackPane) dialog.getScene().getRoot()).getChildren().get(0));
+            Fx.run(() -> view.setRate(16));
+            await(() -> "ambient".equals(view.getPlayer().getActiveMarker()));
+            Fx.run(() -> {
+                assertEquals(AnimationPlayer.INDEFINITE, view.getCycleCount());
+                assertEquals(AnimationPlayer.Status.PLAYING, view.getStatus());
+            });
+            Path directory = Fx.screenshots();
+            if (directory != null) {
+                WritableImage image = Fx.call(() -> {
+                    view.pause();
+                    view.seek(5);
+                    dialog.getScene().getRoot().applyCss();
+                    dialog.getScene().getRoot().layout();
+                    return Fx.snapshot(dialog.getScene().getRoot(), Color.TRANSPARENT);
+                });
+                Fx.writePng(image, directory.resolve("login-demo.png"));
+            }
+        } finally {
+            Fx.run(dialog::close);
+        }
     }
 
     @Test
