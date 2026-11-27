@@ -239,7 +239,10 @@ class AudioPlaybackUiTest extends EditorUiTest {
     @Test
     void playbackRunningIntoTheEndLetsACueRingOut() throws Exception {
         playhead(2.9);
-        run(() -> canvas.togglePlayback());
+        run(() -> {
+            window.getToolBar().setLoop(false);
+            canvas.togglePlayback();
+        });
         WaitForAsyncUtils.waitFor(5, TimeUnit.SECONDS, () -> !outputs.isEmpty() && !fx(() -> canvas.isPlaying()));
 
         assertEquals(0, outputs.get(0).cuesStopped);

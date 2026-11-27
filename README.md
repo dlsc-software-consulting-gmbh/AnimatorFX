@@ -79,7 +79,8 @@ animations it creates inside JavaFX applications.
 - Sound: import of audio files, audio rows with waveforms and editable volume graphs, a cue lane,
   audible playback and scrubbing, a mute switch.
 - Video import, reusable assets, rectangular canvas editing, inspector controls and clip bars.
-- Inspector with a keyframe toggle on every animatable property and a cubic-bezier easing editor.
+- Inspector with a keyframe toggle on every animatable property, a cubic-bezier easing editor
+  and desktop color pipettes for solid colors, gradient stops and the document background.
 - Auto-key, undo/redo, copy/paste of layers and keyframes, groups.
 - Unique export names in the Layer inspector for application-facing live elements.
 - AI generation and project editing with OpenAI or Anthropic, including removable image/SVG

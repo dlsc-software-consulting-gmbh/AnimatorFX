@@ -43,6 +43,8 @@ See the [README](../README.md#quick-start) for Maven wrapper, packaging, and sam
 
 > **Start with a sample.** Use **File → Open…** to open `samples/animations/success.afx`. Press **Space** to preview it, then drag the playhead to see how its layers and keyframes work together.
 
+Toolbar playback looping is enabled by default. Switch off **loop** to play the animation once.
+
 ## 2. Make your first animation
 
 In this exercise, a rectangle moves across a two-second artboard. You will set its first keyframe manually and let Auto-Key record the second.
@@ -79,6 +81,18 @@ Draw rectangles, ellipses, lines, polygons, and stars with the shape tools. Use 
 In the timeline, drag rows to reorder layers or move them into groups. Lock a layer to prevent accidental editing; hide it to exclude it from the preview. Drag the middle of a layer bar to move its active interval, or drag an edge to change when the layer appears or disappears. Expand a row to edit its property keyframes.
 
 With the Select tool active, right-click the canvas for Cut, Copy, Paste, Duplicate, Group, Ungroup, and layer ordering. Right-clicking an unselected layer selects it; right-clicking a selected layer keeps the current selection. You can also paste onto empty canvas. Duplicated visual layers are offset slightly so the copies are visible.
+
+### Pick colors from the desktop
+
+Every color field has a pipette button beside its hex value, including solid paints, gradient
+stops and the document background. Activate it, then click the desired pixel anywhere on the
+desktop. The color changes as one undo step and keeps the field's existing transparency.
+**Escape** or a right-click cancels without changing the color.
+
+You can also point at a pixel and press **Enter** to pick without clicking the application
+behind it. Use this for system areas such as the macOS menu bar or Dock. macOS may require
+**System Settings → Privacy & Security → Screen Recording** permission for AnimatorFX, or for
+the Java launcher / IDE used to run it.
 
 ### Give a layer more movement
 
