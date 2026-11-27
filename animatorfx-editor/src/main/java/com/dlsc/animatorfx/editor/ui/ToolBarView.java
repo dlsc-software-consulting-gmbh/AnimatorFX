@@ -26,7 +26,7 @@ import org.kordamp.ikonli.material2.Material2MZ;
 public final class ToolBarView extends HBox {
 
     private final ObjectProperty<EditorDocument> document = new SimpleObjectProperty<>(this, "document");
-    private final BooleanProperty loop = new SimpleBooleanProperty(this, "loop");
+    private final BooleanProperty loop = new SimpleBooleanProperty(this, "loop", true);
     private final BooleanProperty muted = new SimpleBooleanProperty(this, "muted");
     private final BooleanProperty playing = new SimpleBooleanProperty(this, "playing");
     private final ObjectProperty<Runnable> onPlayPause = new SimpleObjectProperty<>(this, "onPlayPause");

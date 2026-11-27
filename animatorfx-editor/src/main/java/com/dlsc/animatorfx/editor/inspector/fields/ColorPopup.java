@@ -5,6 +5,7 @@ import java.util.function.BiConsumer;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
+import javafx.scene.control.Label;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Background;
 import javafx.scene.layout.BackgroundFill;
@@ -39,6 +40,7 @@ public final class ColorPopup extends Popup {
     private final Region hueHandle = handle();
     private final Region alphaHandle = handle();
     private final StackPane frame = new StackPane();
+    private final Label error = new Label();
 
     private double hue;
     private double saturation;
@@ -85,11 +87,21 @@ public final class ColorPopup extends Popup {
         drag(hueBar, e -> hue = Math.clamp(e.getX() / WIDTH, 0, 1) * 360);
         drag(alphaBar, e -> alpha = Math.clamp(e.getX() / WIDTH, 0, 1));
 
-        VBox content = new VBox(square, hueBar, alphaBar);
+        error.setWrapText(true);
+        error.setMaxWidth(WIDTH);
+        error.getStyleClass().add("pick-error");
+        setError(null);
+        VBox content = new VBox(square, hueBar, alphaBar, error);
         // the popup has a scene of its own: "root" gives it the palette, the frame carries "light"
         content.getStyleClass().addAll("root", "color-popup");
         frame.getChildren().add(content);
         getContent().add(frame);
+    }
+
+    void setError(String message) {
+        error.setText(message);
+        error.setVisible(message != null);
+        error.setManaged(message != null);
     }
 
     private static Region handle() {

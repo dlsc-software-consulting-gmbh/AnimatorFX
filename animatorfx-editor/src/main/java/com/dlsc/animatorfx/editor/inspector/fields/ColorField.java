@@ -2,6 +2,7 @@ package com.dlsc.animatorfx.editor.inspector.fields;
 
 import com.dlsc.animatorfx.model.Rgba;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
 import javafx.geometry.Insets;
@@ -18,6 +19,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
+import org.kordamp.ikonli.javafx.FontIcon;
+import org.kordamp.ikonli.material2.Material2AL;
 
 /**
  * A colour as a swatch and a hex text ({@code #RRGGBB}, or {@code #RRGGBBAA} when not opaque).
@@ -32,12 +35,15 @@ public final class ColorField extends HBox {
     private final Region swatchColor = new Region();
     private final Button swatch = new Button();
     private final TextField hex = new TextField();
+    private final Button pipetteButton = new Button(null, new FontIcon(Material2AL.COLORIZE));
+    private ScreenPipette pipette;
     private ColorPopup popup;
     private Rgba value;
     private boolean typing;
     private boolean updatingText;
     private BiConsumer<Rgba, Boolean> onChange = (color, adjusting) -> {
     };
+    private Consumer<Rgba> onScreenPick = color -> onChange.accept(color, false);
     private Runnable onAdjustEnd = () -> {
     };
 
@@ -83,7 +89,15 @@ public final class ColorField extends HBox {
                 e.consume();
             }
         });
-        getChildren().addAll(swatch, hex);
+        pipetteButton.getStyleClass().setAll("icon-button", "pipette");
+        pipetteButton.setFocusTraversable(false);
+        pipetteButton.setAccessibleText("Pick a color from the screen");
+        pipetteButton.setTooltip(new Tooltip("Pick a screen color: click or press Enter under the pointer; Escape cancels"));
+        pipetteButton.setOnAction(event -> pickFromScreen());
+        disabledProperty().addListener((obs, old, disabled) -> {
+            if (disabled) cancelPipette();
+        });
+        getChildren().addAll(swatch, hex, pipetteButton);
     }
 
     public Rgba getValue() {
@@ -92,6 +106,7 @@ public final class ColorField extends HBox {
 
     /** Shows a colour, or the "mixed" placeholder for {@code null}. */
     public void setValue(Rgba color) {
+        cancelPipette();
         value = color;
         if (!(hex.isFocused() && typing)) {
             showValue();
@@ -107,6 +122,11 @@ public final class ColorField extends HBox {
 
     public void setOnAdjustEnd(Runnable handler) {
         onAdjustEnd = handler;
+    }
+
+    /** Sets the screen-pick handler, for editors that preserve each selected value's alpha. */
+    public void setOnScreenPick(Consumer<Rgba> handler) {
+        onScreenPick = handler;
     }
 
     public TextField getHexField() {
@@ -133,8 +153,38 @@ public final class ColorField extends HBox {
     }
 
     public void showPicker() {
+        cancelPipette();
+        getPopup().setError(null);
         getPopup().setColor(value == null ? Rgba.WHITE : value);
         getPopup().showBelow(swatch);
+    }
+
+    private void pickFromScreen() {
+        if (getScene() == null || getScene().getWindow() == null) return;
+        commit();
+        cancelPipette();
+        if (popup != null) popup.hide();
+        double alpha = value == null ? 1 : value.a();
+        pipette = new ScreenPipette(this, (sample, error) -> {
+            pipette = null;
+            if (error != null) {
+                getPopup().setColor(value == null ? Rgba.WHITE : value);
+                getPopup().setError("Screen color could not be sampled. On macOS, allow Screen Recording "
+                        + "for AnimatorFX (or your Java launcher / IDE) in System Settings.");
+                getPopup().showBelow(swatch);
+            } else if (sample != null) {
+                // Robot exposes 8-bit pixels through float-backed JavaFX color channels.
+                value = new Rgba(Math.round(sample.getRed() * 255) / 255.0,
+                        Math.round(sample.getGreen() * 255) / 255.0, Math.round(sample.getBlue() * 255) / 255.0, alpha);
+                showValue();
+                onScreenPick.accept(value);
+            }
+        });
+        pipette.start();
+    }
+
+    private void cancelPipette() {
+        if (pipette != null) pipette.cancel();
     }
 
     private void showValue() {
